@@ -54,4 +54,37 @@ describe('cellular respiration game', () => {
     expect(game.resources.mitAtp).toBe(3);
     expect(game.resources.nAtp).toBe(5);
   });
+
+  it('ends the game when the respiration total reaches 32 ATP', () => {
+    let game = createGame(['A', 'B']);
+
+    game = attemptStep(game, 'import-glucose');
+    game = attemptStep(game, 'glycolysis');
+    game = attemptStep(game, 'import-pyruvate');
+    game = attemptStep(game, 'import-pyruvate');
+    game = attemptStep(game, 'import-nadh');
+    game = attemptStep(game, 'import-nadh');
+    game = attemptStep(game, 'krebs');
+    game = attemptStep(game, 'krebs');
+
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      game = attemptStep(game, 'etc');
+
+      for (let synthase = 0; synthase < 5; synthase += 1) {
+        game = attemptStep(game, 'atp-synthase');
+      }
+    }
+
+    game = attemptStep(game, 'etc');
+
+    for (let synthase = 0; synthase < 3; synthase += 1) {
+      game = attemptStep(game, 'atp-synthase');
+    }
+
+    expect(game.resources.nAtp).toBe(32);
+    expect(game.completed).toBe(true);
+    expect(game.lastResult?.gameOver).toBe(true);
+    expect(game.lastResult?.winnerNames.length).toBeGreaterThan(0);
+    expect(attemptStep(game, 'glycolysis')).toBe(game);
+  });
 });

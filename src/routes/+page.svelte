@@ -14,6 +14,7 @@
   } from '@lucide/svelte';
   import {
     STEP_DEFINITIONS,
+    TARGET_ATP,
     attemptStep as runStep,
     clampTeamCount,
     createGame,
@@ -127,6 +128,25 @@
     delay: number;
   };
 
+  type ProtonTransitDot = {
+    id: string;
+    field: ProtonFieldId;
+    phase: 'to-action' | 'from-action';
+    x: number;
+    y: number;
+    dx: number;
+    dy: number;
+    radius: number;
+    duration: number;
+    delay: number;
+  };
+
+  type ProtonFlow = {
+    source: ProtonFieldId;
+    target: ProtonFieldId;
+    count: number;
+  };
+
   const BOARD = {
     width: 1280,
     height: 720
@@ -203,6 +223,8 @@
 
   const MOLECULE_TO_ACTION_MS = 640;
   const MOLECULE_FROM_ACTION_MS = 780;
+  const PROTON_TO_ACTION_MS = 620;
+  const PROTON_FROM_ACTION_MS = 760;
 
   
   const PROTON_FIELDS: ProtonField[] = [
@@ -260,6 +282,7 @@
   let showInfo = false;
   let game: GameState = createGame(teamNames);
   let boardIcons: BoardIcon[] = [];
+  let transitProtons: ProtonTransitDot[] = [];
   let feedback: MoveResult | null = null;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
   let moleculeTransitioning = false;
@@ -273,6 +296,7 @@
 
   $: activeTeam = game.teams[game.activeTeamIndex];
   $: leadingScore = Math.max(...game.teams.map((team) => team.score));
+  $: gameFinished = game.completed;
   $: protonDots = getProtonDots(game);
   $: reactantWater = Math.max(0, -game.resources.nWater);
   $: productWater = Math.max(0, game.resources.nWater);
@@ -336,7 +360,7 @@
   }
 
   async function chooseStep(stepId: StepId) {
-    if (feedback || moleculeTransitioning) {
+    if (gameFinished || feedback || moleculeTransitioning) {
       return;
     }
 
@@ -350,7 +374,7 @@
 
     if (!result.success) {
       game = nextGame;
-      showFeedback(result);
+      showFeedback(result, result.gameOver);
       return;
     }
 
@@ -361,7 +385,7 @@
     }
 
     game = nextGame;
-    showFeedback(result);
+    showFeedback(result, result.gameOver);
   }
 
   function dismissFeedback() {
@@ -373,11 +397,16 @@
     }
   }
 
-  function showFeedback(result: MoveResult) {
+  function showFeedback(result: MoveResult, keepVisible = false) {
     feedback = result;
 
     if (feedbackTimer) {
       clearTimeout(feedbackTimer);
+      feedbackTimer = undefined;
+    }
+
+    if (keepVisible) {
+      return;
     }
 
     feedbackTimer = setTimeout(() => {
@@ -467,6 +496,7 @@
     const actionPoint = actionDropPoint(stepId);
     const changes = getMoleculeChanges(before.resources, after.resources);
     const reactants = selectReactants(changes.consumed);
+    const protonFlow = getProtonFlow(before.resources, after.resources);
     const now = performance.now();
 
     reactants.forEach((molecule, index) => {
@@ -479,6 +509,7 @@
       };
     });
 
+    transitProtons = protonFlow ? createProtonTransitDots(protonFlow, actionPoint, 'to-action') : [];
     boardIcons = [...boardIcons];
     await tick();
     await wait(MOLECULE_TO_ACTION_MS + 180);
@@ -491,6 +522,7 @@
     boardIcons = boardIcons.filter((molecule) => !reactantIds.has(molecule.id));
     await tick();
 
+    transitProtons = protonFlow ? createProtonTransitDots(protonFlow, actionPoint, 'from-action') : [];
     const productStartAt = performance.now();
     const products = changes.produced.flatMap(({ spec, amount }) =>
       Array.from({ length: amount }, (_, index) => {
@@ -527,6 +559,7 @@
 
     ambientPaused = false;
     moleculeTransitioning = false;
+    transitProtons = [];
     boardIcons = [...boardIcons];
 
     return true;
@@ -536,6 +569,7 @@
     animationRun += 1;
     ambientPaused = false;
     moleculeTransitioning = false;
+    transitProtons = [];
   }
 
   function getMoleculeChanges(before: Resources, after: Resources): { consumed: MoleculeChange[]; produced: MoleculeChange[] } {
@@ -573,6 +607,55 @@
     }
 
     return selected;
+  }
+
+  function getProtonFlow(before: Resources, after: Resources): ProtonFlow | null {
+    const matrixDelta = after.mitH - before.mitH;
+    const intermembraneDelta = after.intH - before.intH;
+
+    if (matrixDelta < 0 && intermembraneDelta > 0) {
+      return {
+        source: 'matrix',
+        target: 'intermembrane',
+        count: Math.min(Math.abs(matrixDelta), intermembraneDelta)
+      };
+    }
+
+    if (intermembraneDelta < 0 && matrixDelta > 0) {
+      return {
+        source: 'intermembrane',
+        target: 'matrix',
+        count: Math.min(Math.abs(intermembraneDelta), matrixDelta)
+      };
+    }
+
+    return null;
+  }
+
+  function createProtonTransitDots(flow: ProtonFlow, actionPoint: Point, phase: ProtonTransitDot['phase']): ProtonTransitDot[] {
+    const count = Math.min(flow.count, 24);
+    const field = phase === 'to-action' ? flow.source : flow.target;
+
+    return Array.from({ length: count }, (_, index) => {
+      const seed = randomSeed();
+      const fieldPoint = randomPointInProtonField(field, seed);
+      const actionTarget = pointNear(actionPoint, index, count, 12);
+      const start = phase === 'to-action' ? fieldPoint : actionTarget;
+      const target = phase === 'to-action' ? actionTarget : fieldPoint;
+
+      return {
+        id: `${phase}-${field}-${seed}-${index}`,
+        field,
+        phase,
+        x: start.x,
+        y: start.y,
+        dx: roundSvg(target.x - start.x),
+        dy: roundSvg(target.y - start.y),
+        radius: 2.6 + pseudoRandom(seed + 5) * 1.5,
+        duration: phase === 'to-action' ? PROTON_TO_ACTION_MS : PROTON_FROM_ACTION_MS,
+        delay: pseudoRandom(seed + 11) * 90
+      };
+    });
   }
 
   function runMoleculeFrame(now: number) {
@@ -686,6 +769,18 @@
       x: roundSvg(point.x + Math.cos(angle) * distance),
       y: roundSvg(point.y + Math.sin(angle) * distance)
     };
+  }
+
+  function winnerLabel(names: string[]): string {
+    if (names.length === 0) {
+      return 'Partita conclusa';
+    }
+
+    if (names.length === 1) {
+      return `Vince ${names[0]}`;
+    }
+
+    return `Vincono ${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
   }
 
   function trackMolecule(node: SVGGElement, molecule: BoardIcon) {
@@ -883,6 +978,24 @@
         delay: pseudoRandom(seed + 25) * 4
       };
     });
+  }
+
+  function randomPointInProtonField(fieldId: ProtonFieldId, seed: number): Point {
+    const field = PROTON_FIELDS.find((candidate) => candidate.id === fieldId);
+
+    if (!field) {
+      return { x: MEMBRANES.mitoInner.cx, y: MEMBRANES.mitoInner.cy };
+    }
+
+    const theta = degreesToRadians(field.startDeg + pseudoRandom(seed) * (field.endDeg - field.startDeg));
+    const band = 0.2 + pseudoRandom(seed + 17) * 0.62;
+    const rx = field.innerRx + (field.outerRx - field.innerRx) * band;
+    const ry = field.innerRy + (field.outerRy - field.innerRy) * band;
+
+    return {
+      x: roundSvg(field.cx + Math.cos(theta) * rx),
+      y: roundSvg(field.cy + Math.sin(theta) * ry)
+    };
   }
 
   function pseudoRandom(seed: number): number {
@@ -1132,8 +1245,9 @@
     <section class="scoreboard" aria-label="Punteggi squadre">
       {#each game.teams as team, index}
         <article
-          class:active={index === game.activeTeamIndex}
-          class:leading={team.score === leadingScore && leadingScore > 0}
+          class:active={!gameFinished && index === game.activeTeamIndex}
+          class:leading={!gameFinished && team.score === leadingScore && leadingScore > 0}
+          class:winner={gameFinished && game.winnerIds.includes(team.id)}
           class="score-card"
           style={`--team-color: ${team.color}`}
         >
@@ -1142,9 +1256,11 @@
             <p>{team.name}</p>
             <strong>{team.score}</strong>
           </div>
-          {#if index === game.activeTeamIndex}
+          {#if gameFinished && game.winnerIds.includes(team.id)}
+            <span class="winner-chip"><Trophy size={16} /> Vince</span>
+          {:else if !gameFinished && index === game.activeTeamIndex}
             <span class="turn-chip">Tocca a voi</span>
-          {:else if team.score === leadingScore && leadingScore > 0}
+          {:else if !gameFinished && team.score === leadingScore && leadingScore > 0}
             <Trophy size={18} />
           {/if}
         </article>
@@ -1237,7 +1353,7 @@
             <circle cx="12" cy="0" r="15" fill="#9bc9ff" stroke="#4d7fd8" stroke-width="3" />
             <text class="molecule-text" x="0" y="6">O2</text>
           </symbol>
-          <symbol id="icon-water" viewBox="-24 -30 48 60">
+          <symbol id="icon-water" viewBox="-26 -30 52 70">
             <path
               d="M0 -26 C12 -8 22 5 22 17 C22 29 12 36 0 36 C-12 36 -22 29 -22 17 C-22 5 -12 -8 0 -26 Z"
               fill="#62cbe0"
@@ -1319,11 +1435,26 @@
           {/each}
         </g>
 
+        {#if transitProtons.length > 0}
+          <g class="proton-transit-layer">
+            {#each transitProtons as proton (proton.id)}
+              <circle
+                class={`proton-transit-dot ${proton.phase} ${proton.field}`}
+                cx={proton.x}
+                cy={proton.y}
+                r={proton.radius}
+                style={`--move-x: ${proton.dx}px; --move-y: ${proton.dy}px; --duration: ${proton.duration}ms; --delay: ${proton.delay}ms`}
+              />
+            {/each}
+          </g>
+        {/if}
+
         {#each BOARD_ACTIONS as action}
           <foreignObject x={action.x} y={action.y} width={action.width} height={action.height}>
             <button
               type="button"
               class="board-action"
+              disabled={gameFinished}
               aria-label={action.label}
               onclick={() => chooseStep(action.id)}
             >
@@ -1346,10 +1477,10 @@
             style={`--team-color: ${feedback.teamColor}`}
             aria-live="polite"
           >
-            <span class="feedback-title">{feedback.success ? 'Operazione riuscita!' : 'Non puoi farlo!'}</span>
-            <strong>{feedback.teamName}</strong>
+            <span class="feedback-title">{feedback.gameOver ? 'Partita conclusa!' : feedback.success ? 'Operazione riuscita!' : 'Non puoi farlo!'}</span>
+            <strong>{feedback.gameOver ? winnerLabel(feedback.winnerNames) : feedback.teamName}</strong>
             <span class="feedback-points">{feedback.pointsDelta > 0 ? '+' : ''}{feedback.pointsDelta} punti</span>
-            <small>{feedback.stepLabel}</small>
+            <small>{feedback.gameOver ? `${TARGET_ATP} ATP raggiunti con ${feedback.stepLabel}` : feedback.stepLabel}</small>
           </span>
         </button>
       {/if}

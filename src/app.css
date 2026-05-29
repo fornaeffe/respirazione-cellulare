@@ -411,6 +411,17 @@ input[type='range'] {
   transform: translateY(2px);
 }
 
+.score-card.winner {
+  border-color: color-mix(in srgb, var(--team-color) 78%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--team-color) 24%, white), rgba(255, 255, 255, 0.92)),
+    #ffffff;
+  box-shadow:
+    0 18px 44px color-mix(in srgb, var(--team-color) 28%, transparent),
+    inset 0 0 0 2px color-mix(in srgb, var(--team-color) 18%, transparent);
+  transform: translateY(2px);
+}
+
 .score-card.leading svg {
   color: var(--amber);
 }
@@ -437,11 +448,15 @@ input[type='range'] {
   line-height: 1;
 }
 
-.turn-chip {
+.turn-chip,
+.winner-chip {
   align-self: stretch;
-  display: grid;
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: center;
   min-width: 86px;
-  place-items: center;
+  gap: 5px;
   padding: 0 8px;
   border-radius: 999px;
   color: #ffffff;
@@ -450,6 +465,10 @@ input[type='range'] {
   font-weight: 950;
   text-align: center;
   text-transform: uppercase;
+}
+
+.winner-chip {
+  background: linear-gradient(135deg, var(--team-color), var(--amber));
 }
 
 .board-shell {
@@ -566,6 +585,55 @@ input[type='range'] {
   animation-play-state: paused;
 }
 
+.proton-transit-layer {
+  pointer-events: none;
+}
+
+.proton-transit-dot {
+  fill: #e84d5b;
+  stroke: #af2b39;
+  stroke-width: 0.8;
+  filter: drop-shadow(0 4px 5px rgba(175, 43, 57, 0.26));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.proton-transit-dot.intermembrane {
+  fill: #f05f69;
+}
+
+.proton-transit-dot.to-action {
+  animation: proton-to-action var(--duration) ease-in var(--delay) both;
+}
+
+.proton-transit-dot.from-action {
+  animation: proton-from-action var(--duration) ease-out var(--delay) both;
+}
+
+@keyframes proton-to-action {
+  0% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1);
+  }
+
+  100% {
+    opacity: 0.18;
+    transform: translate(var(--move-x), var(--move-y)) scale(0.62);
+  }
+}
+
+@keyframes proton-from-action {
+  0% {
+    opacity: 0.18;
+    transform: translate(0, 0) scale(0.62);
+  }
+
+  100% {
+    opacity: 0.95;
+    transform: translate(var(--move-x), var(--move-y)) scale(1);
+  }
+}
+
 @keyframes proton-drift {
   to {
     transform: translate(var(--drift-x), var(--drift-y));
@@ -641,6 +709,16 @@ input[type='range'] {
   background: #ffffff;
   box-shadow: 0 15px 36px rgba(77, 127, 216, 0.18);
   transform: translateY(-2px);
+}
+
+.board-action:disabled,
+.board-action:disabled:hover {
+  border-color: rgba(23, 33, 43, 0.08);
+  color: rgba(23, 33, 43, 0.48);
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .board-action strong {

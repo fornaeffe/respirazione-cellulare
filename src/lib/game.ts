@@ -61,6 +61,8 @@ export interface MoveResult {
   pointsDelta: number;
   message: string;
   missing: string[];
+  gameOver: boolean;
+  winnerNames: string[];
 }
 
 export interface GameState {
@@ -70,6 +72,8 @@ export interface GameState {
   turn: number;
   history: MoveResult[];
   lastResult: MoveResult | null;
+  completed: boolean;
+  winnerIds: number[];
 }
 
 export interface StepDefinition {
@@ -107,6 +111,8 @@ const TEAM_COLORS = [
   '#4f8f3a',
   '#60707d'
 ];
+
+export const TARGET_ATP = 32;
 
 export const STEP_DEFINITIONS: StepDefinition[] = [
   {
@@ -229,7 +235,9 @@ export function createGame(teamNames = defaultTeamNames(5)): GameState {
     resources: initialResources(),
     turn: 1,
     history: [],
-    lastResult: null
+    lastResult: null,
+    completed: false,
+    winnerIds: []
   };
 }
 
@@ -244,6 +252,10 @@ export function getStepDefinition(stepId: StepId): StepDefinition {
 }
 
 export function attemptStep(state: GameState, stepId: StepId): GameState {
+  if (state.completed) {
+    return state;
+  }
+
   const step = getStepDefinition(stepId);
   const resources = { ...state.resources };
   const teams = state.teams.map((team) => ({ ...team }));
@@ -257,6 +269,10 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
   }
 
   activeTeam.score += pointsDelta;
+  const completed = resources.nAtp >= TARGET_ATP;
+  const winnerScore = Math.max(...teams.map((team) => team.score));
+  const winnerIds = completed ? teams.filter((team) => team.score === winnerScore).map((team) => team.id) : [];
+  const winnerNames = completed ? teams.filter((team) => winnerIds.includes(team.id)).map((team) => team.name) : [];
 
   const result: MoveResult = {
     success,
@@ -266,7 +282,9 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
     teamColor: activeTeam.color,
     pointsDelta,
     missing,
-    message: success ? successMessage(stepId) : `Mancano: ${missing.join(', ')}.`
+    message: success ? successMessage(stepId) : `Mancano: ${missing.join(', ')}.`,
+    gameOver: completed,
+    winnerNames
   };
 
   return {
@@ -276,7 +294,9 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
     activeTeamIndex: (state.activeTeamIndex + 1) % state.teams.length,
     turn: state.turn + 1,
     lastResult: result,
-    history: [result, ...state.history].slice(0, 8)
+    history: [result, ...state.history].slice(0, 8),
+    completed,
+    winnerIds
   };
 }
 
