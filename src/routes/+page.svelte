@@ -124,31 +124,31 @@
   ];
 
   const BOARD_ACTIONS: BoardAction[] = [
-    placeAction('import-glucose', pointOnEllipse(MEMBRANES.cell, -155), 170, 58, 'Importa glucosio', 'membrana cellulare', 12, -2),
-    placeAction('glycolysis', relativePoint(MEMBRANES.cell, -0.58, 0.3), 146, 58, 'Glicolisi', 'citoplasma'),
+    placeAction('import-glucose', pointOnEllipse(MEMBRANES.cell, -155), 170, 40, 'Importa glucosio', 'membrana cellulare', 12, -2),
+    placeAction('glycolysis', relativePoint(MEMBRANES.cell, -0.58, 0.3), 146, 40, 'Glicolisi', 'citoplasma'),
     placeAction(
       'import-pyruvate',
       pointOnEllipse(MEMBRANES.mitoOuter, 176),
       188,
-      58,
+      40,
       'Importa piruvato',
       'membrana esterna',
       18,
       0
     ),
-    placeAction('import-nadh', pointOnEllipse(MEMBRANES.mitoOuter, -145), 150, 58, 'Importa NADH', 'shuttle', 18, -10),
-    placeAction('krebs', relativePoint(MEMBRANES.mitoInner, -0.2, 0.02), 140, 58, 'Krebs', 'matrice'),
+    placeAction('import-nadh', pointOnEllipse(MEMBRANES.mitoOuter, -145), 150, 40, 'Importa NADH', 'shuttle', 18, -10),
+    placeAction('krebs', relativePoint(MEMBRANES.mitoInner, -0.2, 0.02), 150, 40, 'Ciclo di Krebs', 'matrice'),
     placeAction(
       'etc',
-      pointOnEllipse(MEMBRANES.mitoInner, -36),
+      pointOnEllipse(MEMBRANES.mitoInner, -40),
       188,
-      56,
+      40,
       'Catena di trasporto',
       'membrana interna',
       -4,
       -4
     ),
-    placeAction('atp-synthase', pointOnEllipse(MEMBRANES.mitoInner, 47), 156, 56, 'ATP sintasi', 'membrana interna', 0, 8)
+    placeAction('atp-synthase', pointOnEllipse(MEMBRANES.mitoInner, 40), 156, 40, 'ATP sintasi', 'membrana interna', 0, 8)
   ];
 
   
@@ -277,14 +277,14 @@
 
   function getBoardIcons(state: GameState): BoardIcon[] {
     const resources = state.resources;
-    const waterCount = 4 + Math.min(4, Math.abs(resources.nWater));
+    const waterCount = resources.nWater;
 
     return [
       ...makeMoleculeIcons('glucose', resources.extGlucose, 'outside', 'ext-glucose', {
         max: 1,
         scale: 1.1
       }),
-      ...makeMoleculeIcons('oxygen', 6, 'free', 'oxygen', { max: 6, scale: 0.82, dimmed: true, drift: 78 }),
+      ...makeMoleculeIcons('oxygen', 6 - resources.nOxygen, 'free', 'oxygen', { max: 6, scale: 0.82, dimmed: true, drift: 78 }),
       ...makeMoleculeIcons('water', waterCount, 'free', 'water-free', {
         max: 8,
         scale: 0.76,
@@ -943,8 +943,8 @@
 
         <g class="zone-labels">
           <text class="zone-label outside-label" x="54" y="62">Esterno</text>
-          <text class="zone-label cytosol-label" x="246" y="142">Citoplasma</text>
-          <text class="zone-label intermembrane-label" x="900" y="248">Spazio intermembrana</text>
+          <text class="zone-label cytosol-label" x="246" y="180">Citoplasma</text>
+          <text class="zone-label intermembrane-label" x="700" y="180">Spazio intermembrana</text>
           <text class="zone-label matrix-label" x="620" y="300">Matrice mitocondriale</text>
         </g>
 
@@ -985,7 +985,6 @@
               onclick={() => chooseStep(action.id)}
             >
               <strong>{action.label}</strong>
-              <span>{action.hint}</span>
             </button>
           </foreignObject>
         {/each}
