@@ -106,9 +106,9 @@
   };
 
   const MEMBRANES = {
-    cell: { cx: 640, cy: 368, rx: 548, ry: 292 },
-    mitoOuter: { cx: 800, cy: 390, rx: 382, ry: 205 },
-    mitoInner: { cx: 800, cy: 390, rx: 308, ry: 148 }
+    cell: { cx: 640, cy: 368, rx: 600, ry: 320 },
+    mitoOuter: { cx: 800, cy: 390, rx: 400, ry: 250 },
+    mitoInner: { cx: 800, cy: 390, rx: 320, ry: 200 }
   } satisfies Record<string, Ellipse>;
 
   const CELL_MEMBRANE_PATH = ellipsePath(MEMBRANES.cell);
@@ -151,42 +151,26 @@
     placeAction('atp-synthase', pointOnEllipse(MEMBRANES.mitoInner, 47), 156, 56, 'ATP sintasi', 'membrana interna', 0, 8)
   ];
 
-  const PROCESS_ARROWS = [
-    {
-      className: 'glucose-arrow',
-      path: curvedPath(pointOnEllipse(MEMBRANES.cell, -155), relativePoint(MEMBRANES.cell, -0.48, -0.28), 24, -28)
-    },
-    {
-      className: 'pyruvate-arrow',
-      path: curvedPath(relativePoint(MEMBRANES.cell, -0.22, 0.22), pointOnEllipse(MEMBRANES.mitoOuter, 176), 34, 26)
-    },
-    {
-      className: 'nadh-arrow',
-      path: curvedPath(relativePoint(MEMBRANES.cell, -0.18, -0.12), pointOnEllipse(MEMBRANES.mitoOuter, -145), 36, -24)
-    },
-    {
-      className: 'proton-arrow',
-      path: curvedPath(pointOnEllipse(MEMBRANES.mitoInner, -8), pointOnEllipse(MEMBRANES.mitoOuter, -22), 28, -20)
-    },
-    {
-      className: 'atp-arrow',
-      path: curvedPath(pointOnEllipse(MEMBRANES.mitoInner, 48), relativePoint(MEMBRANES.mitoInner, 0.18, 0.22), -36, 24)
-    }
-  ];
-
-  const CRISTA_PATHS = [cristaPath(-0.42, 0), cristaPath(0.02, 17), cristaPath(0.42, 31)];
-
+  
   const PROTON_FIELDS: ProtonField[] = [
     {
       id: 'matrix',
-      label: 'H+ matrice',
-      path: annularSectorPath(MEMBRANES.mitoInner.cx, MEMBRANES.mitoInner.cy, 296, 142, 190, 107, -38, 36),
+      label: '',
+      path: annularSectorPath(
+        MEMBRANES.mitoInner.cx, 
+        MEMBRANES.mitoInner.cy, 
+        MEMBRANES.mitoInner.rx, 
+        MEMBRANES.mitoInner.ry, 
+        190, 
+        107, 
+        -38, 
+        36),
       labelX: 1000,
       labelY: 404,
       cx: MEMBRANES.mitoInner.cx,
       cy: MEMBRANES.mitoInner.cy,
-      outerRx: 296,
-      outerRy: 142,
+      outerRx: MEMBRANES.mitoInner.rx,
+      outerRy: MEMBRANES.mitoInner.ry,
       innerRx: 190,
       innerRy: 107,
       startDeg: -38,
@@ -194,16 +178,24 @@
     },
     {
       id: 'intermembrane',
-      label: 'H+ intermembrana',
-      path: annularSectorPath(MEMBRANES.mitoOuter.cx, MEMBRANES.mitoOuter.cy, 366, 192, 318, 152, -38, 36),
+      label: '',
+      path: annularSectorPath(
+        MEMBRANES.mitoOuter.cx, 
+        MEMBRANES.mitoOuter.cy, 
+        MEMBRANES.mitoOuter.rx, 
+        MEMBRANES.mitoOuter.ry, 
+        MEMBRANES.mitoInner.rx, 
+        MEMBRANES.mitoInner.ry, 
+        -38, 
+        36),
       labelX: 1048,
       labelY: 326,
       cx: MEMBRANES.mitoOuter.cx,
       cy: MEMBRANES.mitoOuter.cy,
-      outerRx: 366,
-      outerRy: 192,
-      innerRx: 318,
-      innerRy: 152,
+      outerRx: MEMBRANES.mitoOuter.rx,
+      outerRy: MEMBRANES.mitoOuter.ry,
+      innerRx: MEMBRANES.mitoInner.rx,
+      innerRy: MEMBRANES.mitoInner.ry,
       startDeg: -38,
       endDeg: 36
     }
@@ -367,7 +359,7 @@
     } = {}
   ): BoardIcon[] {
     const max = options.max ?? 8;
-    const visibleCount = Math.min(max, Math.max(0, Math.round(count)));
+    const visibleCount = count;
 
     return Array.from({ length: visibleCount }, (_, index) => {
       const seed = hashString(`${key}-${index}`);
@@ -528,7 +520,7 @@
       return [];
     }
 
-    const visibleCount = Math.min(44, Math.max(8, Math.round(count / 4)));
+    const visibleCount = count;
     return Array.from({ length: visibleCount }, (_, index) => {
       const seed = fieldId === 'matrix' ? index + 31 : index + 211;
       const theta = degreesToRadians(field.startDeg + pseudoRandom(seed) * (field.endDeg - field.startDeg));
@@ -756,9 +748,7 @@
   <main class="game-page">
     <header class="game-header">
       <div class="game-title">
-        <div class="icon-tile"><FlaskConical size={22} /></div>
         <div>
-          <p class="eyebrow">Plancia interattiva</p>
           <h1>Respirazione cellulare</h1>
         </div>
       </div>
@@ -926,14 +916,10 @@
         <rect class="board-bg" x="0" y="0" width="1280" height="720" rx="34" />
 
         <path class="cell-shape" d={CELL_MEMBRANE_PATH} />
-        <path class="cell-rim" d={CELL_RIM_PATH} />
 
         <g class="mito-art" filter="url(#softShadow)">
           <path class="outer-mito" d={OUTER_MITO_PATH} />
           <path class="inner-membrane" d={INNER_MITO_PATH} />
-          {#each CRISTA_PATHS as path}
-            <path class="crista" d={path} />
-          {/each}
         </g>
 
         {#each PROTON_FIELDS as field}
@@ -954,16 +940,12 @@
           </g>
         {/each}
 
-        {#each PROCESS_ARROWS as arrow}
-          <path class={`process-arrow ${arrow.className}`} d={arrow.path} />
-        {/each}
 
         <g class="zone-labels">
           <text class="zone-label outside-label" x="54" y="62">Esterno</text>
           <text class="zone-label cytosol-label" x="246" y="142">Citoplasma</text>
           <text class="zone-label intermembrane-label" x="900" y="248">Spazio intermembrana</text>
           <text class="zone-label matrix-label" x="620" y="300">Matrice mitocondriale</text>
-          <text class="zone-label membrane-label" x="958" y="456">Membrana interna</text>
         </g>
 
         {#each MOLECULE_LAYERS as layer}
