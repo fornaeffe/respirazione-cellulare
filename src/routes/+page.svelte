@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import {
     BookOpen,
     FlaskConical,
@@ -21,6 +21,7 @@
     getTeamColor,
     type GameState,
     type MoveResult,
+    type Resources,
     type StepId,
     type TokenKind
   } from '$lib/game';
@@ -49,20 +50,46 @@
 
   type MoleculeCompartment = 'outside' | 'cytosol' | 'intermembrane' | 'matrix' | 'free';
 
+  type MoleculePhase =
+    | {
+        kind: 'drift';
+      }
+    | {
+        kind: 'to-action' | 'from-action';
+        start: Point;
+        target: Point;
+        startedAt: number;
+        duration: number;
+      };
+
   type BoardIcon = {
-    key: string;
+    id: string;
+    specId: string;
     kind: TokenKind;
     compartment: MoleculeCompartment;
     x: number;
     y: number;
-    driftX: number;
-    driftY: number;
-    duration: number;
-    delay: number;
+    vx: number;
+    vy: number;
     spin: number;
+    rotate: number;
     scale?: number;
     dimmed?: boolean;
-    rotate?: number;
+    phase: MoleculePhase;
+  };
+
+  type MoleculeDisplaySpec = {
+    id: string;
+    kind: TokenKind;
+    compartment: MoleculeCompartment;
+    count: (resources: Resources) => number;
+    scale?: number;
+    dimmed?: boolean;
+  };
+
+  type MoleculeChange = {
+    spec: MoleculeDisplaySpec;
+    amount: number;
   };
 
   type MoleculeLayer = {
@@ -151,6 +178,32 @@
     placeAction('atp-synthase', pointOnEllipse(MEMBRANES.mitoInner, 40), 156, 40, 'ATP sintasi', 'membrana interna', 0, 8)
   ];
 
+  const MOLECULE_SPECS: MoleculeDisplaySpec[] = [
+    moleculeSpec('ext-glucose', 'glucose', 'outside', (resources) => resources.extGlucose, { scale: 1.1 }),
+    moleculeSpec('oxygen', 'oxygen', 'free', (resources) => Math.max(0, 6 - resources.nOxygen), {
+      scale: 0.82,
+      dimmed: true
+    }),
+    moleculeSpec('water-free', 'water', 'free', (resources) => Math.max(0, resources.nWater), { scale: 0.76 }),
+    moleculeSpec('co2', 'co2', 'free', (resources) => resources.nCo2, { scale: 0.68 }),
+    moleculeSpec('cyt-glucose', 'glucose', 'cytosol', (resources) => resources.cytGlucose, { scale: 1.05 }),
+    moleculeSpec('cyt-pyruvate', 'pyruvate', 'cytosol', (resources) => resources.cytPyruvate),
+    moleculeSpec('cyt-adp', 'adp', 'cytosol', (resources) => resources.cytAdp, { scale: 0.68 }),
+    moleculeSpec('cyt-atp', 'atp', 'cytosol', (resources) => resources.cytAtp, { scale: 0.7 }),
+    moleculeSpec('cyt-nad', 'nad', 'cytosol', (resources) => resources.cytNad, { scale: 0.68 }),
+    moleculeSpec('cyt-nadh', 'nadh', 'cytosol', (resources) => resources.cytNadh, { scale: 0.68 }),
+    moleculeSpec('mit-pyruvate', 'pyruvate', 'matrix', (resources) => resources.mitPyruvate, { scale: 0.76 }),
+    moleculeSpec('mit-adp', 'adp', 'matrix', (resources) => resources.mitAdp, { scale: 0.52 }),
+    moleculeSpec('mit-atp', 'atp', 'matrix', (resources) => resources.mitAtp, { scale: 0.48 }),
+    moleculeSpec('mit-nad', 'nad', 'matrix', (resources) => resources.mitNad, { scale: 0.54 }),
+    moleculeSpec('mit-nadh', 'nadh', 'matrix', (resources) => resources.mitNadh, { scale: 0.54 }),
+    moleculeSpec('mit-fad', 'fad', 'matrix', (resources) => resources.mitFad, { scale: 0.56 }),
+    moleculeSpec('mit-fadh2', 'fadh2', 'matrix', (resources) => resources.mitFadh2, { scale: 0.56 })
+  ];
+
+  const MOLECULE_TO_ACTION_MS = 640;
+  const MOLECULE_FROM_ACTION_MS = 780;
+
   
   const PROTON_FIELDS: ProtonField[] = [
     {
@@ -206,19 +259,38 @@
   let started = false;
   let showInfo = false;
   let game: GameState = createGame(teamNames);
+  let boardIcons: BoardIcon[] = [];
   let feedback: MoveResult | null = null;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let moleculeTransitioning = false;
+  let ambientPaused = false;
+  let moleculeSerial = 0;
+  let animationRun = 0;
+  let frameRequest: number | undefined;
+  let lastFrameAt = 0;
+
+  const moleculeElements = new Map<string, SVGGElement>();
 
   $: activeTeam = game.teams[game.activeTeamIndex];
   $: leadingScore = Math.max(...game.teams.map((team) => team.score));
-  $: boardIcons = getBoardIcons(game);
   $: protonDots = getProtonDots(game);
   $: reactantWater = Math.max(0, -game.resources.nWater);
   $: productWater = Math.max(0, game.resources.nWater);
 
+  onMount(() => {
+    lastFrameAt = performance.now();
+    frameRequest = requestAnimationFrame(runMoleculeFrame);
+  });
+
   onDestroy(() => {
     if (feedbackTimer) {
       clearTimeout(feedbackTimer);
+    }
+
+    animationRun += 1;
+
+    if (frameRequest !== undefined) {
+      cancelAnimationFrame(frameRequest);
     }
   });
 
@@ -234,36 +306,62 @@
   }
 
   function startGame() {
-    game = createGame(teamNames.slice(0, teamCount));
+    const nextGame = createGame(teamNames.slice(0, teamCount));
+
+    cancelMoleculeTransition();
+    game = nextGame;
+    boardIcons = createMoleculesFromGame(nextGame);
     feedback = null;
     showInfo = false;
     started = true;
   }
 
   function resetBoard() {
-    game = createGame(game.teams.map((team) => team.name));
+    const nextGame = createGame(game.teams.map((team) => team.name));
+
+    cancelMoleculeTransition();
+    game = nextGame;
+    boardIcons = createMoleculesFromGame(nextGame);
     dismissFeedback();
   }
 
   function openSetup() {
+    cancelMoleculeTransition();
     teamCount = game.teams.length;
     teamNames = game.teams.map((team) => team.name);
+    boardIcons = [];
     dismissFeedback();
     showInfo = false;
     started = false;
   }
 
-  function chooseStep(stepId: StepId) {
-    game = runStep(game, stepId);
-    feedback = game.lastResult;
-
-    if (feedbackTimer) {
-      clearTimeout(feedbackTimer);
+  async function chooseStep(stepId: StepId) {
+    if (feedback || moleculeTransitioning) {
+      return;
     }
 
-    feedbackTimer = setTimeout(() => {
-      feedback = null;
-    }, 1900);
+    const previousGame = game;
+    const nextGame = runStep(game, stepId);
+    const result = nextGame.lastResult;
+
+    if (!result) {
+      return;
+    }
+
+    if (!result.success) {
+      game = nextGame;
+      showFeedback(result);
+      return;
+    }
+
+    const completed = await playSuccessfulStep(stepId, previousGame, nextGame);
+
+    if (!completed) {
+      return;
+    }
+
+    game = nextGame;
+    showFeedback(result);
   }
 
   function dismissFeedback() {
@@ -275,113 +373,356 @@
     }
   }
 
-  function getBoardIcons(state: GameState): BoardIcon[] {
-    const resources = state.resources;
-    const waterCount = resources.nWater;
+  function showFeedback(result: MoveResult) {
+    feedback = result;
 
-    return [
-      ...makeMoleculeIcons('glucose', resources.extGlucose, 'outside', 'ext-glucose', {
-        max: 1,
-        scale: 1.1
-      }),
-      ...makeMoleculeIcons('oxygen', 6 - resources.nOxygen, 'free', 'oxygen', { max: 6, scale: 0.82, dimmed: true, drift: 78 }),
-      ...makeMoleculeIcons('water', waterCount, 'free', 'water-free', {
-        max: 8,
-        scale: 0.76,
-        dimmed: resources.nWater === 0,
-        drift: 72
-      }),
-      ...makeMoleculeIcons('co2', resources.nCo2, 'free', 'co2', { max: 8, scale: 0.68, drift: 74 }),
-      ...makeMoleculeIcons('glucose', resources.cytGlucose, 'cytosol', 'cyt-glucose', {
-        max: 2,
-        scale: 1.05
-      }),
-      ...makeMoleculeIcons('pyruvate', resources.cytPyruvate, 'cytosol', 'cyt-pyruvate', {
-        max: 4
-      }),
-      ...makeMoleculeIcons('adp', resources.cytAdp, 'cytosol', 'cyt-adp', {
-        max: 4,
-        scale: 0.68
-      }),
-      ...makeMoleculeIcons('atp', resources.cytAtp, 'cytosol', 'cyt-atp', {
-        max: 4,
-        scale: 0.7
-      }),
-      ...makeMoleculeIcons('nad', resources.cytNad, 'cytosol', 'cyt-nad', {
-        max: 4,
-        scale: 0.68
-      }),
-      ...makeMoleculeIcons('nadh', resources.cytNadh, 'cytosol', 'cyt-nadh', {
-        max: 4,
-        scale: 0.68
-      }),
-      ...makeMoleculeIcons('pyruvate', resources.mitPyruvate, 'matrix', 'mit-pyruvate', {
-        max: 4,
-        scale: 0.76
-      }),
-      ...makeMoleculeIcons('adp', resources.mitAdp, 'matrix', 'mit-adp', {
-        max: 16,
-        scale: 0.52
-      }),
-      ...makeMoleculeIcons('atp', resources.mitAtp, 'matrix', 'mit-atp', {
-        max: 10,
-        scale: 0.48
-      }),
-      ...makeMoleculeIcons('nad', resources.mitNad, 'matrix', 'mit-nad', {
-        max: 10,
-        scale: 0.54
-      }),
-      ...makeMoleculeIcons('nadh', resources.mitNadh, 'matrix', 'mit-nadh', {
-        max: 10,
-        scale: 0.54
-      }),
-      ...makeMoleculeIcons('fad', resources.mitFad, 'matrix', 'mit-fad', {
-        max: 4,
-        scale: 0.56
-      }),
-      ...makeMoleculeIcons('fadh2', resources.mitFadh2, 'matrix', 'mit-fadh2', {
-        max: 4,
-        scale: 0.56
-      })
-    ];
+    if (feedbackTimer) {
+      clearTimeout(feedbackTimer);
+    }
+
+    feedbackTimer = setTimeout(() => {
+      feedback = null;
+    }, 1900);
   }
 
-  function makeMoleculeIcons(
+  function moleculeSpec(
+    id: string,
     kind: TokenKind,
-    count: number,
     compartment: MoleculeCompartment,
-    key: string,
+    count: (resources: Resources) => number,
     options: {
-      max?: number;
       scale?: number;
       dimmed?: boolean;
-      drift?: number;
     } = {}
-  ): BoardIcon[] {
-    const max = options.max ?? 8;
-    const visibleCount = count;
+  ): MoleculeDisplaySpec {
+    return {
+      id,
+      kind,
+      compartment,
+      count,
+      scale: options.scale,
+      dimmed: options.dimmed
+    };
+  }
 
-    return Array.from({ length: visibleCount }, (_, index) => {
-      const seed = hashString(`${key}-${index}`);
-      const point = randomPointInCompartment(compartment, seed);
-      const drift = moleculeDrift(compartment, point, seed + 47, options.drift);
+  function createMoleculesFromGame(state: GameState): BoardIcon[] {
+    moleculeSerial = 0;
 
-      return {
-        key: `${key}-${index}`,
-        kind,
-        compartment,
-        x: point.x,
-        y: point.y,
-        driftX: drift.x,
-        driftY: drift.y,
-        duration: 7 + pseudoRandom(seed + 59) * 8,
-        delay: pseudoRandom(seed + 61) * 10,
-        spin: -8 + pseudoRandom(seed + 67) * 16,
-        scale: options.scale,
-        dimmed: options.dimmed,
-        rotate: -10 + pseudoRandom(seed + 71) * 20
+    return MOLECULE_SPECS.flatMap((spec) =>
+      Array.from({ length: visibleMoleculeCount(spec, state.resources) }, () => createMolecule(spec))
+    );
+  }
+
+  function createMolecule(
+    spec: MoleculeDisplaySpec,
+    options: {
+      start?: Point;
+      target?: Point;
+      phase?: 'drift' | 'from-action';
+      startedAt?: number;
+      duration?: number;
+    } = {}
+  ): BoardIcon {
+    const seed = randomSeed();
+    const point = options.start ?? randomPointInCompartment(spec.compartment, seed);
+    const velocity = randomVelocity(spec.compartment, seed + 37);
+    const target = options.target;
+
+    return {
+      id: `${spec.id}-${moleculeSerial++}`,
+      specId: spec.id,
+      kind: spec.kind,
+      compartment: spec.compartment,
+      x: point.x,
+      y: point.y,
+      vx: velocity.x,
+      vy: velocity.y,
+      spin: -10 + pseudoRandom(seed + 67) * 20,
+      rotate: -14 + pseudoRandom(seed + 71) * 28,
+      scale: spec.scale,
+      dimmed: spec.dimmed,
+      phase:
+        options.phase === 'from-action' && target
+          ? {
+              kind: 'from-action',
+              start: point,
+              target,
+              startedAt: options.startedAt ?? performance.now(),
+              duration: options.duration ?? MOLECULE_FROM_ACTION_MS
+            }
+          : { kind: 'drift' }
+    };
+  }
+
+  function visibleMoleculeCount(spec: MoleculeDisplaySpec, resources: Resources): number {
+    return Math.max(0, Math.round(spec.count(resources)));
+  }
+
+  async function playSuccessfulStep(stepId: StepId, before: GameState, after: GameState): Promise<boolean> {
+    const runId = animationRun + 1;
+    animationRun = runId;
+    moleculeTransitioning = true;
+    ambientPaused = true;
+
+    const actionPoint = actionDropPoint(stepId);
+    const changes = getMoleculeChanges(before.resources, after.resources);
+    const reactants = selectReactants(changes.consumed);
+    const now = performance.now();
+
+    reactants.forEach((molecule, index) => {
+      molecule.phase = {
+        kind: 'to-action',
+        start: { x: molecule.x, y: molecule.y },
+        target: pointNear(actionPoint, index, reactants.length, 7),
+        startedAt: now,
+        duration: MOLECULE_TO_ACTION_MS + pseudoRandom(hashString(molecule.id)) * 140
       };
     });
+
+    boardIcons = [...boardIcons];
+    await tick();
+    await wait(MOLECULE_TO_ACTION_MS + 180);
+
+    if (runId !== animationRun) {
+      return false;
+    }
+
+    const reactantIds = new Set(reactants.map((molecule) => molecule.id));
+    boardIcons = boardIcons.filter((molecule) => !reactantIds.has(molecule.id));
+    await tick();
+
+    const productStartAt = performance.now();
+    const products = changes.produced.flatMap(({ spec, amount }) =>
+      Array.from({ length: amount }, (_, index) => {
+        const start = pointNear(actionPoint, index, amount, 6);
+        const target = randomPointInCompartment(spec.compartment, randomSeed());
+
+        return createMolecule(spec, {
+          start,
+          target,
+          phase: 'from-action',
+          startedAt: productStartAt,
+          duration: MOLECULE_FROM_ACTION_MS + pseudoRandom(hashString(`${spec.id}-${index}-${productStartAt}`)) * 140
+        });
+      })
+    );
+
+    boardIcons = [...boardIcons, ...products];
+    await tick();
+    await wait(MOLECULE_FROM_ACTION_MS + 180);
+
+    if (runId !== animationRun) {
+      return false;
+    }
+
+    products.forEach((molecule) => {
+      if (molecule.phase.kind === 'from-action') {
+        molecule.x = molecule.phase.target.x;
+        molecule.y = molecule.phase.target.y;
+      }
+
+      setRandomVelocity(molecule, randomSeed());
+      molecule.phase = { kind: 'drift' };
+    });
+
+    ambientPaused = false;
+    moleculeTransitioning = false;
+    boardIcons = [...boardIcons];
+
+    return true;
+  }
+
+  function cancelMoleculeTransition() {
+    animationRun += 1;
+    ambientPaused = false;
+    moleculeTransitioning = false;
+  }
+
+  function getMoleculeChanges(before: Resources, after: Resources): { consumed: MoleculeChange[]; produced: MoleculeChange[] } {
+    const consumed: MoleculeChange[] = [];
+    const produced: MoleculeChange[] = [];
+
+    for (const spec of MOLECULE_SPECS) {
+      const beforeCount = visibleMoleculeCount(spec, before);
+      const afterCount = visibleMoleculeCount(spec, after);
+      const difference = afterCount - beforeCount;
+
+      if (difference > 0) {
+        produced.push({ spec, amount: difference });
+      } else if (difference < 0) {
+        consumed.push({ spec, amount: Math.abs(difference) });
+      }
+    }
+
+    return { consumed, produced };
+  }
+
+  function selectReactants(changes: MoleculeChange[]): BoardIcon[] {
+    const selected: BoardIcon[] = [];
+    const alreadySelected = new Set<string>();
+
+    for (const change of changes) {
+      const candidates = boardIcons
+        .filter((molecule) => molecule.specId === change.spec.id && molecule.phase.kind === 'drift' && !alreadySelected.has(molecule.id))
+        .slice(-change.amount);
+
+      for (const molecule of candidates) {
+        selected.push(molecule);
+        alreadySelected.add(molecule.id);
+      }
+    }
+
+    return selected;
+  }
+
+  function runMoleculeFrame(now: number) {
+    const deltaSeconds = Math.min(0.05, Math.max(0, (now - lastFrameAt) / 1000 || 0));
+    lastFrameAt = now;
+
+    for (const molecule of boardIcons) {
+      updateMolecule(molecule, now, deltaSeconds);
+      moleculeElements.get(molecule.id)?.setAttribute('transform', moleculeTransform(molecule));
+    }
+
+    frameRequest = requestAnimationFrame(runMoleculeFrame);
+  }
+
+  function updateMolecule(molecule: BoardIcon, now: number, deltaSeconds: number) {
+    if (molecule.phase.kind === 'to-action' || molecule.phase.kind === 'from-action') {
+      const progress = clamp01((now - molecule.phase.startedAt) / molecule.phase.duration);
+      const eased = easeInOut(progress);
+
+      molecule.x = lerp(molecule.phase.start.x, molecule.phase.target.x, eased);
+      molecule.y = lerp(molecule.phase.start.y, molecule.phase.target.y, eased);
+      molecule.rotate += molecule.spin * deltaSeconds * 2.4;
+      return;
+    }
+
+    if (ambientPaused) {
+      return;
+    }
+
+    const next = {
+      x: molecule.x + molecule.vx * deltaSeconds,
+      y: molecule.y + molecule.vy * deltaSeconds
+    };
+
+    molecule.rotate += molecule.spin * deltaSeconds * 0.22;
+
+    if (pointInCompartment(next, molecule.compartment)) {
+      molecule.x = next.x;
+      molecule.y = next.y;
+      return;
+    }
+
+    steerMoleculeInside(molecule);
+  }
+
+  function steerMoleculeInside(molecule: BoardIcon) {
+    const target = randomPointInCompartment(molecule.compartment, randomSeed());
+    const dx = target.x - molecule.x;
+    const dy = target.y - molecule.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const speed = moleculeSpeed(molecule.compartment, randomSeed());
+
+    molecule.vx = (dx / distance) * speed;
+    molecule.vy = (dy / distance) * speed;
+    molecule.x = lerp(molecule.x, target.x, 0.012);
+    molecule.y = lerp(molecule.y, target.y, 0.012);
+  }
+
+  function randomVelocity(compartment: MoleculeCompartment, seed: number): Point {
+    const angle = pseudoRandom(seed) * Math.PI * 2;
+    const speed = moleculeSpeed(compartment, seed + 1);
+
+    return {
+      x: Math.cos(angle) * speed,
+      y: Math.sin(angle) * speed
+    };
+  }
+
+  function setRandomVelocity(molecule: BoardIcon, seed: number) {
+    const velocity = randomVelocity(molecule.compartment, seed);
+
+    molecule.vx = velocity.x;
+    molecule.vy = velocity.y;
+  }
+
+  function moleculeSpeed(compartment: MoleculeCompartment, seed: number): number {
+    const baseSpeed =
+      {
+        outside: 15,
+        cytosol: 12,
+        intermembrane: 9,
+        matrix: 10,
+        free: 18
+      }[compartment] ?? 12;
+
+    return baseSpeed * (0.65 + pseudoRandom(seed) * 0.7);
+  }
+
+  function actionDropPoint(stepId: StepId): Point {
+    const action = BOARD_ACTIONS.find((candidate) => candidate.id === stepId);
+
+    if (!action) {
+      return { x: BOARD.width / 2, y: BOARD.height / 2 };
+    }
+
+    return {
+      x: action.x + action.width / 2,
+      y: action.y + action.height + 18
+    };
+  }
+
+  function pointNear(point: Point, index: number, total: number, radius: number): Point {
+    if (total <= 1) {
+      return point;
+    }
+
+    const angle = (index / total) * Math.PI * 2;
+    const distance = radius * (0.45 + (index % 3) * 0.26);
+
+    return {
+      x: roundSvg(point.x + Math.cos(angle) * distance),
+      y: roundSvg(point.y + Math.sin(angle) * distance)
+    };
+  }
+
+  function trackMolecule(node: SVGGElement, molecule: BoardIcon) {
+    moleculeElements.set(molecule.id, node);
+    node.setAttribute('transform', moleculeTransform(molecule));
+
+    return {
+      destroy() {
+        moleculeElements.delete(molecule.id);
+      }
+    };
+  }
+
+  function moleculeTransform(molecule: BoardIcon): string {
+    return `translate(${roundSvg(molecule.x)} ${roundSvg(molecule.y)}) rotate(${roundSvg(molecule.rotate)}) scale(${molecule.scale ?? 1})`;
+  }
+
+  function wait(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(resolve, milliseconds);
+    });
+  }
+
+  function easeInOut(value: number): number {
+    return value < 0.5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
+  }
+
+  function clamp01(value: number): number {
+    return Math.min(1, Math.max(0, value));
+  }
+
+  function lerp(start: number, end: number, amount: number): number {
+    return start + (end - start) * amount;
+  }
+
+  function randomSeed(): number {
+    return Math.floor(Math.random() * 1_000_000_000) + 1;
   }
 
   function randomPointInCompartment(compartment: MoleculeCompartment, seed: number): Point {
@@ -810,7 +1151,7 @@
       {/each}
     </section>
 
-    <section class="board-shell" aria-label="Schema della cellula">
+    <section class="board-shell" class:transitioning={moleculeTransitioning} aria-label="Schema della cellula">
       <svg class="board-svg" viewBox="0 0 1280 720" role="img" aria-label="Cellula con mitocondrio, molecole e azioni">
         <defs>
           <linearGradient id="cellFill" x1="0" x2="1" y1="0" y2="1">
@@ -950,13 +1291,9 @@
 
         {#each MOLECULE_LAYERS as layer}
           <g class={`molecule-layer ${layer.id}`} mask={`url(#${layer.maskId})`}>
-            {#each boardIcons.filter((icon) => icon.compartment === layer.id) as icon}
-              <g transform={`translate(${icon.x} ${icon.y})`}>
-                <g
-                  class={`molecule ${icon.kind}`}
-                  class:dimmed={icon.dimmed}
-                  style={`--drift-x: ${icon.driftX}px; --drift-y: ${icon.driftY}px; --duration: ${icon.duration}s; --delay: -${icon.delay}s; --spin: ${icon.spin}deg; --base-rotate: ${icon.rotate ?? 0}deg; --scale: ${icon.scale ?? 1}`}
-                >
+            {#each boardIcons.filter((icon) => icon.compartment === layer.id && icon.phase.kind === 'drift') as icon (icon.id)}
+              <g use:trackMolecule={icon} transform={moleculeTransform(icon)}>
+                <g class={`molecule ${icon.kind}`} class:dimmed={icon.dimmed}>
                   <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
                 </g>
               </g>
@@ -964,17 +1301,23 @@
           </g>
         {/each}
 
-        {#each boardIcons.filter((icon) => icon.compartment === 'free') as icon}
-          <g transform={`translate(${icon.x} ${icon.y})`}>
-            <g
-              class={`molecule ${icon.kind}`}
-              class:dimmed={icon.dimmed}
-              style={`--drift-x: ${icon.driftX}px; --drift-y: ${icon.driftY}px; --duration: ${icon.duration}s; --delay: -${icon.delay}s; --spin: ${icon.spin}deg; --base-rotate: ${icon.rotate ?? 0}deg; --scale: ${icon.scale ?? 1}`}
-            >
+        {#each boardIcons.filter((icon) => icon.compartment === 'free' && icon.phase.kind === 'drift') as icon (icon.id)}
+          <g use:trackMolecule={icon} transform={moleculeTransform(icon)}>
+            <g class={`molecule ${icon.kind}`} class:dimmed={icon.dimmed}>
               <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
             </g>
           </g>
         {/each}
+
+        <g class="molecule-layer transit">
+          {#each boardIcons.filter((icon) => icon.phase.kind !== 'drift') as icon (icon.id)}
+            <g use:trackMolecule={icon} transform={moleculeTransform(icon)}>
+              <g class={`molecule ${icon.kind} transitioning`} class:dimmed={icon.dimmed}>
+                <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
+              </g>
+            </g>
+          {/each}
+        </g>
 
         {#each BOARD_ACTIONS as action}
           <foreignObject x={action.x} y={action.y} width={action.width} height={action.height}>
@@ -989,6 +1332,10 @@
           </foreignObject>
         {/each}
       </svg>
+
+      {#if moleculeTransitioning}
+        <div class="board-blocker" aria-hidden="true"></div>
+      {/if}
 
       {#if feedback}
         <button type="button" class="feedback-layer" aria-label="Chiudi feedback" onclick={dismissFeedback}>
