@@ -518,13 +518,45 @@ input[type='range'] {
   stroke-width: 13;
 }
 
-.h-label {
-  fill: rgba(95, 58, 48, 0.7);
+.proton-field path {
+  fill: rgba(255, 247, 235, 0.4);
+  stroke: rgba(232, 77, 91, 0.34);
+  stroke-dasharray: 6 7;
+  stroke-width: 3;
+}
+
+.proton-field.intermembrane path {
+  fill: rgba(255, 236, 239, 0.44);
+  stroke: rgba(232, 77, 91, 0.42);
+}
+
+.proton-field text {
+  fill: rgba(95, 58, 48, 0.76);
   font-size: 13px;
   font-weight: 950;
   paint-order: stroke;
-  stroke: rgba(255, 239, 206, 0.78);
+  stroke: rgba(255, 245, 225, 0.88);
   stroke-width: 4px;
+}
+
+.proton-dot {
+  fill: #e84d5b;
+  stroke: #af2b39;
+  stroke-width: 0.8;
+  filter: drop-shadow(0 2px 3px rgba(175, 43, 57, 0.22));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: proton-drift var(--duration) ease-in-out var(--delay) infinite alternate;
+}
+
+.proton-dot.intermembrane {
+  fill: #f05f69;
+}
+
+@keyframes proton-drift {
+  to {
+    transform: translate(var(--drift-x), var(--drift-y));
+  }
 }
 
 .process-arrow {
@@ -605,55 +637,65 @@ input[type='range'] {
   font-weight: 900;
 }
 
-.feedback-pop {
+.feedback-layer {
   position: fixed;
   z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: rgba(23, 33, 43, 0.08);
+  cursor: pointer;
+}
+
+.feedback-pop {
   top: 50%;
   left: 50%;
   display: grid;
   min-width: min(520px, calc(100vw - 32px));
   gap: 6px;
   padding: clamp(24px, 4vw, 42px);
-  border: 4px solid var(--team-color);
+  border: 4px solid var(--feedback-color);
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 26px 90px rgba(23, 33, 43, 0.28);
   text-align: center;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
   animation: pop-in 260ms ease-out;
+  cursor: pointer;
 }
 
 .feedback-pop.success {
+  --feedback-color: var(--green);
   background:
     linear-gradient(135deg, rgba(47, 158, 143, 0.2), rgba(255, 255, 255, 0.94)),
     #ffffff;
 }
 
 .feedback-pop.failure {
+  --feedback-color: var(--rose);
   background:
     linear-gradient(135deg, rgba(232, 77, 91, 0.18), rgba(255, 255, 255, 0.94)),
     #ffffff;
 }
 
-.feedback-pop p {
-  color: var(--team-color);
+.feedback-title {
+  color: var(--feedback-color);
   font-size: clamp(2.1rem, 5vw, 4.8rem);
   font-weight: 950;
   line-height: 0.92;
 }
 
 .feedback-pop strong {
-  color: var(--ink);
+  color: var(--team-color);
   font-size: clamp(1.1rem, 2vw, 1.55rem);
 }
 
-.feedback-pop span {
+.feedback-points {
   justify-self: center;
   padding: 6px 14px;
   border-radius: 999px;
   color: #ffffff;
-  background: var(--team-color);
+  background: var(--feedback-color);
   font-size: 1.2rem;
   font-weight: 950;
 }
@@ -667,12 +709,12 @@ input[type='range'] {
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.82) rotate(-2deg);
+    transform: scale(0.82) rotate(-2deg);
   }
 
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    transform: scale(1) rotate(0deg);
   }
 }
 

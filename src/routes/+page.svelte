@@ -42,6 +42,37 @@
     y: number;
     scale?: number;
     dimmed?: boolean;
+    rotate?: number;
+  };
+
+  type ProtonFieldId = 'matrix' | 'intermembrane';
+
+  type ProtonField = {
+    id: ProtonFieldId;
+    label: string;
+    path: string;
+    labelX: number;
+    labelY: number;
+    cx: number;
+    cy: number;
+    outerRx: number;
+    outerRy: number;
+    innerRx: number;
+    innerRy: number;
+    startDeg: number;
+    endDeg: number;
+  };
+
+  type ProtonDot = {
+    key: string;
+    field: ProtonFieldId;
+    x: number;
+    y: number;
+    radius: number;
+    driftX: number;
+    driftY: number;
+    duration: number;
+    delay: number;
   };
 
   const BOARD_ACTIONS: BoardAction[] = [
@@ -92,21 +123,54 @@
     },
     {
       id: 'etc',
-      x: 930,
-      y: 184,
-      width: 196,
-      height: 58,
+      x: 900,
+      y: 430,
+      width: 188,
+      height: 56,
       label: 'Catena di trasporto',
       hint: 'membrana interna'
     },
     {
       id: 'atp-synthase',
-      x: 962,
-      y: 560,
+      x: 926,
+      y: 530,
       width: 156,
-      height: 58,
+      height: 56,
       label: 'ATP sintasi',
       hint: 'membrana interna'
+    }
+  ];
+
+  const PROTON_FIELDS: ProtonField[] = [
+    {
+      id: 'matrix',
+      label: 'H+ matrice',
+      path: annularSectorPath(860, 405, 256, 128, 166, 84, -46, -8),
+      labelX: 984,
+      labelY: 348,
+      cx: 860,
+      cy: 405,
+      outerRx: 256,
+      outerRy: 128,
+      innerRx: 166,
+      innerRy: 84,
+      startDeg: -46,
+      endDeg: -8
+    },
+    {
+      id: 'intermembrane',
+      label: 'H+ intermembrana',
+      path: annularSectorPath(860, 405, 350, 184, 266, 134, -46, -8),
+      labelX: 1068,
+      labelY: 288,
+      cx: 860,
+      cy: 405,
+      outerRx: 350,
+      outerRy: 184,
+      innerRx: 266,
+      innerRy: 134,
+      startDeg: -46,
+      endDeg: -8
     }
   ];
 
@@ -121,6 +185,7 @@
   $: activeTeam = game.teams[game.activeTeamIndex];
   $: leadingScore = Math.max(...game.teams.map((team) => team.score));
   $: boardIcons = getBoardIcons(game);
+  $: protonDots = getProtonDots(game);
   $: reactantWater = Math.max(0, -game.resources.nWater);
   $: productWater = Math.max(0, game.resources.nWater);
 
@@ -150,13 +215,13 @@
 
   function resetBoard() {
     game = createGame(game.teams.map((team) => team.name));
-    feedback = null;
+    dismissFeedback();
   }
 
   function openSetup() {
     teamCount = game.teams.length;
     teamNames = game.teams.map((team) => team.name);
-    feedback = null;
+    dismissFeedback();
     showInfo = false;
     started = false;
   }
@@ -172,6 +237,15 @@
     feedbackTimer = setTimeout(() => {
       feedback = null;
     }, 1900);
+  }
+
+  function dismissFeedback() {
+    feedback = null;
+
+    if (feedbackTimer) {
+      clearTimeout(feedbackTimer);
+      feedbackTimer = undefined;
+    }
   }
 
   function getBoardIcons(state: GameState): BoardIcon[] {
@@ -194,36 +268,100 @@
         cols: 2,
         max: 4
       }),
-      ...makeIcons('adp', resources.cytAdp, 285, 282, 'cyt-adp', { cols: 2, dx: 40, dy: 38, max: 4, scale: 0.72 }),
-      ...makeIcons('atp', resources.cytAtp, 210, 406, 'cyt-atp', { cols: 2, dx: 40, dy: 38, max: 4, scale: 0.76 }),
-      ...makeIcons('nad', resources.cytNad, 374, 240, 'cyt-nad', { cols: 2, dx: 48, max: 4, scale: 0.72 }),
-      ...makeIcons('nadh', resources.cytNadh, 376, 410, 'cyt-nadh', { cols: 2, dx: 48, max: 4, scale: 0.72 }),
+      ...makeIcons('adp', resources.cytAdp, 285, 282, 'cyt-adp', {
+        layout: 'fan',
+        cols: 4,
+        dx: 18,
+        dy: 9,
+        rowY: 24,
+        max: 4,
+        scale: 0.68
+      }),
+      ...makeIcons('atp', resources.cytAtp, 210, 406, 'cyt-atp', {
+        layout: 'fan',
+        cols: 4,
+        dx: 18,
+        dy: 9,
+        rowY: 24,
+        max: 4,
+        scale: 0.7
+      }),
+      ...makeIcons('nad', resources.cytNad, 374, 240, 'cyt-nad', {
+        layout: 'fan',
+        cols: 4,
+        dx: 22,
+        dy: 7,
+        rowY: 24,
+        max: 4,
+        scale: 0.68
+      }),
+      ...makeIcons('nadh', resources.cytNadh, 376, 410, 'cyt-nadh', {
+        layout: 'fan',
+        cols: 4,
+        dx: 22,
+        dy: 7,
+        rowY: 24,
+        max: 4,
+        scale: 0.68
+      }),
       ...makeIcons('pyruvate', resources.mitPyruvate, 618, 326, 'mit-pyruvate', {
         cols: 2,
         max: 4,
         scale: 0.76
       }),
-      ...makeIcons('adp', resources.mitAdp, 890, 432, 'mit-adp', { cols: 3, dx: 40, dy: 35, max: 6, scale: 0.58 }),
-      ...makeIcons('atp', resources.mitAtp, 1018, 438, 'mit-atp', { cols: 2, dx: 40, dy: 35, max: 6, scale: 0.58 }),
-      ...makeIcons('nad', resources.mitNad, 646, 408, 'mit-nad', { cols: 3, dx: 43, dy: 37, max: 6, scale: 0.58 }),
-      ...makeIcons('nadh', resources.mitNadh, 704, 496, 'mit-nadh', { cols: 3, dx: 43, dy: 37, max: 6, scale: 0.58 }),
-      ...makeIcons('fad', resources.mitFad, 1056, 352, 'mit-fad', { cols: 1, dy: 38, max: 4, scale: 0.62 }),
-      ...makeIcons('fadh2', resources.mitFadh2, 1112, 352, 'mit-fadh2', { cols: 1, dy: 38, max: 4, scale: 0.62 }),
-      ...makeIcons('proton', resources.mitH, 806, 274, 'mit-h', {
+      ...makeIcons('adp', resources.mitAdp, 780, 438, 'mit-adp', {
+        layout: 'fan',
         cols: 6,
-        dx: 22,
-        dy: 20,
-        max: 18,
-        scale: 0.46
+        dx: 15,
+        dy: 7,
+        rowY: 30,
+        max: 12,
+        scale: 0.52
       }),
-      ...makeIcons('proton', resources.intH, 990, 274, 'int-h', {
-        cols: 6,
-        dx: 22,
-        dy: 20,
-        max: 18,
-        scale: 0.46
+      ...makeIcons('atp', resources.mitAtp, 1120, 488, 'mit-atp', {
+        layout: 'fan',
+        cols: 5,
+        dx: 16,
+        dy: 7,
+        rowY: 28,
+        max: 10,
+        scale: 0.48
       }),
-      ...makeIcons('co2', resources.nCo2, 1148, 500, 'co2', { cols: 2, dx: 40, dy: 42, max: 6, scale: 0.78 }),
+      ...makeIcons('nad', resources.mitNad, 628, 402, 'mit-nad', {
+        layout: 'fan',
+        cols: 5,
+        dx: 19,
+        dy: 7,
+        rowY: 30,
+        max: 10,
+        scale: 0.54
+      }),
+      ...makeIcons('nadh', resources.mitNadh, 700, 518, 'mit-nadh', {
+        layout: 'fan',
+        cols: 5,
+        dx: 19,
+        dy: 7,
+        rowY: 30,
+        max: 10,
+        scale: 0.54
+      }),
+      ...makeIcons('fad', resources.mitFad, 1194, 410, 'mit-fad', {
+        layout: 'fan',
+        cols: 4,
+        dx: 18,
+        dy: 8,
+        max: 4,
+        scale: 0.56
+      }),
+      ...makeIcons('fadh2', resources.mitFadh2, 1194, 452, 'mit-fadh2', {
+        layout: 'fan',
+        cols: 4,
+        dx: 18,
+        dy: 8,
+        max: 4,
+        scale: 0.56
+      }),
+      ...makeIcons('co2', resources.nCo2, 1162, 538, 'co2', { cols: 2, dx: 38, dy: 40, max: 6, scale: 0.66 }),
       ...makeIcons('water', Math.max(0, resources.nWater), 1110, 422, 'water-product', {
         cols: 2,
         max: 6,
@@ -239,9 +377,11 @@
     y: number,
     key: string,
     options: {
+      layout?: 'grid' | 'fan';
       cols?: number;
       dx?: number;
       dy?: number;
+      rowY?: number;
       max?: number;
       scale?: number;
       dimmed?: boolean;
@@ -251,19 +391,108 @@
     const dx = options.dx ?? 58;
     const dy = options.dy ?? 48;
     const max = options.max ?? 8;
-    const visibleCount =
-      kind === 'proton'
-        ? Math.min(max, Math.max(0, Math.round(count / 7)))
-        : Math.min(max, Math.max(0, Math.round(count)));
+    const visibleCount = Math.min(max, Math.max(0, Math.round(count)));
 
     return Array.from({ length: visibleCount }, (_, index) => ({
       key: `${key}-${index}`,
       kind,
-      x: x + (index % cols) * dx,
-      y: y + Math.floor(index / cols) * dy,
+      x:
+        options.layout === 'fan'
+          ? x + (index % cols) * dx
+          : x + (index % cols) * dx,
+      y:
+        options.layout === 'fan'
+          ? y + (index % cols) * dy + Math.floor(index / cols) * (options.rowY ?? dy)
+          : y + Math.floor(index / cols) * dy,
       scale: options.scale,
-      dimmed: options.dimmed
+      dimmed: options.dimmed,
+      rotate: options.layout === 'fan' ? (index % cols) * 2 - Math.min(cols, visibleCount) : 0
     }));
+  }
+
+  function getProtonDots(state: GameState): ProtonDot[] {
+    return [
+      ...makeProtonDots('matrix', state.resources.mitH),
+      ...makeProtonDots('intermembrane', state.resources.intH)
+    ];
+  }
+
+  function makeProtonDots(fieldId: ProtonFieldId, count: number): ProtonDot[] {
+    const field = PROTON_FIELDS.find((candidate) => candidate.id === fieldId);
+
+    if (!field) {
+      return [];
+    }
+
+    const visibleCount = Math.min(44, Math.max(8, Math.round(count / 4)));
+    return Array.from({ length: visibleCount }, (_, index) => {
+      const seed = fieldId === 'matrix' ? index + 31 : index + 211;
+      const theta = degreesToRadians(field.startDeg + pseudoRandom(seed) * (field.endDeg - field.startDeg));
+      const band = 0.18 + pseudoRandom(seed + 17) * 0.66;
+      const rx = field.innerRx + (field.outerRx - field.innerRx) * band;
+      const ry = field.innerRy + (field.outerRy - field.innerRy) * band;
+      const x = field.cx + Math.cos(theta) * rx;
+      const y = field.cy + Math.sin(theta) * ry;
+
+      return {
+        key: `${fieldId}-h-${index}`,
+        field: fieldId,
+        x,
+        y,
+        radius: 2.4 + pseudoRandom(seed + 5) * 1.5,
+        driftX: -5 + pseudoRandom(seed + 9) * 10,
+        driftY: -4 + pseudoRandom(seed + 13) * 8,
+        duration: 2.2 + pseudoRandom(seed + 21) * 2.8,
+        delay: pseudoRandom(seed + 25) * 4
+      };
+    });
+  }
+
+  function pseudoRandom(seed: number): number {
+    const value = Math.sin(seed * 12.9898) * 43758.5453;
+    return value - Math.floor(value);
+  }
+
+  function annularSectorPath(
+    cx: number,
+    cy: number,
+    outerRx: number,
+    outerRy: number,
+    innerRx: number,
+    innerRy: number,
+    startDeg: number,
+    endDeg: number
+  ): string {
+    const start = ellipsePoint(cx, cy, outerRx, outerRy, startDeg);
+    const end = ellipsePoint(cx, cy, outerRx, outerRy, endDeg);
+    const innerEnd = ellipsePoint(cx, cy, innerRx, innerRy, endDeg);
+    const innerStart = ellipsePoint(cx, cy, innerRx, innerRy, startDeg);
+    const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+
+    return [
+      `M ${start.x} ${start.y}`,
+      `A ${outerRx} ${outerRy} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+      `L ${innerEnd.x} ${innerEnd.y}`,
+      `A ${innerRx} ${innerRy} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
+      'Z'
+    ].join(' ');
+  }
+
+  function ellipsePoint(cx: number, cy: number, rx: number, ry: number, deg: number): { x: number; y: number } {
+    const radians = degreesToRadians(deg);
+
+    return {
+      x: roundSvg(cx + Math.cos(radians) * rx),
+      y: roundSvg(cy + Math.sin(radians) * ry)
+    };
+  }
+
+  function degreesToRadians(deg: number): number {
+    return (deg * Math.PI) / 180;
+  }
+
+  function roundSvg(value: number): number {
+    return Math.round(value * 10) / 10;
   }
 </script>
 
@@ -429,6 +658,11 @@
           <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#273241" flood-opacity="0.18" />
           </filter>
+          {#each PROTON_FIELDS as field}
+            <clipPath id={`proton-clip-${field.id}`}>
+              <path d={field.path} />
+            </clipPath>
+          {/each}
 
           <symbol id="icon-glucose" viewBox="-34 -22 68 44">
             <path d="M-18 -18 H17 L32 0 L17 18 H-18 L-32 0 Z" fill="#eef2f5" stroke="#aeb8c2" stroke-width="3" />
@@ -471,10 +705,6 @@
           <symbol id="icon-fadh2" viewBox="-34 -22 68 44">
             <rect x="-30" y="-17" width="60" height="34" rx="7" fill="#31b75a" stroke="#18813c" stroke-width="3" />
             <text class="molecule-text light" x="0" y="5">FADH2</text>
-          </symbol>
-          <symbol id="icon-proton" viewBox="-15 -15 30 30">
-            <circle cx="0" cy="0" r="12" fill="#e84d5b" stroke="#af2b39" stroke-width="3" />
-            <text class="molecule-text light small" x="0" y="5">H+</text>
           </symbol>
           <symbol id="icon-oxygen" viewBox="-32 -20 64 40">
             <circle cx="-10" cy="0" r="15" fill="#9bc9ff" stroke="#4d7fd8" stroke-width="3" />
@@ -528,20 +758,35 @@
           <path class="crista" d="M630 300 C704 242 764 363 835 298 C907 234 963 344 1012 292" />
         </g>
 
-        <text class="h-label" x="806" y="252">H+ matrice</text>
-        <text class="h-label" x="990" y="252">H+ intermembrana</text>
+        {#each PROTON_FIELDS as field}
+          <g class={`proton-field ${field.id}`}>
+            <path d={field.path} />
+            <text x={field.labelX} y={field.labelY}>{field.label}</text>
+          </g>
+          <g clip-path={`url(#proton-clip-${field.id})`}>
+            {#each protonDots.filter((dot) => dot.field === field.id) as dot}
+              <circle
+                class={`proton-dot ${dot.field}`}
+                cx={dot.x}
+                cy={dot.y}
+                r={dot.radius}
+                style={`--drift-x: ${dot.driftX}px; --drift-y: ${dot.driftY}px; --duration: ${dot.duration}s; --delay: -${dot.delay}s`}
+              />
+            {/each}
+          </g>
+        {/each}
 
         <path class="process-arrow glucose-arrow" d="M142 184 C182 190 205 214 222 246" />
         <path class="process-arrow pyruvate-arrow" d="M424 448 C486 456 520 448 552 426" />
         <path class="process-arrow nadh-arrow" d="M454 332 C510 306 536 268 562 254" />
-        <path class="process-arrow proton-arrow" d="M914 328 C978 300 1034 268 1082 246" />
+        <path class="process-arrow proton-arrow" d="M990 374 C1018 346 1056 316 1100 290" />
         <path class="process-arrow atp-arrow" d="M1085 498 C1034 526 972 528 920 500" />
 
         {#each boardIcons as icon}
           <g
             class={`molecule ${icon.kind}`}
             class:dimmed={icon.dimmed}
-            transform={`translate(${icon.x} ${icon.y}) scale(${icon.scale ?? 1})`}
+            transform={`translate(${icon.x} ${icon.y}) rotate(${icon.rotate ?? 0}) scale(${icon.scale ?? 1})`}
           >
             <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
           </g>
@@ -563,18 +808,20 @@
       </svg>
 
       {#if feedback}
-        <section
-          class:success={feedback.success}
-          class:failure={!feedback.success}
-          class="feedback-pop"
-          style={`--team-color: ${feedback.teamColor}`}
-          aria-live="polite"
-        >
-          <p>{feedback.success ? 'Operazione riuscita!' : 'Non puoi farlo!'}</p>
-          <strong>{feedback.teamName}</strong>
-          <span>{feedback.pointsDelta > 0 ? '+' : ''}{feedback.pointsDelta} punti</span>
-          <small>{feedback.stepLabel}</small>
-        </section>
+        <button type="button" class="feedback-layer" aria-label="Chiudi feedback" onclick={dismissFeedback}>
+          <span
+            class:success={feedback.success}
+            class:failure={!feedback.success}
+            class="feedback-pop"
+            style={`--team-color: ${feedback.teamColor}`}
+            aria-live="polite"
+          >
+            <span class="feedback-title">{feedback.success ? 'Operazione riuscita!' : 'Non puoi farlo!'}</span>
+            <strong>{feedback.teamName}</strong>
+            <span class="feedback-points">{feedback.pointsDelta > 0 ? '+' : ''}{feedback.pointsDelta} punti</span>
+            <small>{feedback.stepLabel}</small>
+          </span>
+        </button>
       {/if}
     </section>
 
