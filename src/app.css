@@ -478,12 +478,21 @@ input[type='range'] {
   font-size: 25px;
   font-weight: 950;
   paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: rgba(255, 255, 255, 0.9);
   stroke-width: 5px;
 }
 
-.membrane-label {
+.zone-labels {
+  pointer-events: none;
+}
+
+.membrane-label,
+.intermembrane-label {
   font-size: 19px;
+}
+
+.matrix-label {
+  font-size: 21px;
 }
 
 .cell-shape {
@@ -572,12 +581,29 @@ input[type='range'] {
   stroke: rgba(232, 77, 91, 0.38);
 }
 
+.molecule-layer {
+  pointer-events: none;
+}
+
 .molecule {
   filter: drop-shadow(0 6px 7px rgba(23, 33, 43, 0.18));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: molecule-drift var(--duration) ease-in-out var(--delay) infinite alternate;
 }
 
 .molecule.dimmed {
   opacity: 0.7;
+}
+
+@keyframes molecule-drift {
+  from {
+    transform: rotate(var(--base-rotate)) scale(var(--scale));
+  }
+
+  to {
+    transform: translate(var(--drift-x), var(--drift-y)) rotate(calc(var(--base-rotate) + var(--spin))) scale(var(--scale));
+  }
 }
 
 .molecule-text {

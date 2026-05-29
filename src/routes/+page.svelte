@@ -35,14 +35,39 @@
     hint: string;
   };
 
+  type Point = {
+    x: number;
+    y: number;
+  };
+
+  type Ellipse = {
+    cx: number;
+    cy: number;
+    rx: number;
+    ry: number;
+  };
+
+  type MoleculeCompartment = 'outside' | 'cytosol' | 'intermembrane' | 'matrix' | 'free';
+
   type BoardIcon = {
     key: string;
     kind: TokenKind;
+    compartment: MoleculeCompartment;
     x: number;
     y: number;
+    driftX: number;
+    driftY: number;
+    duration: number;
+    delay: number;
+    spin: number;
     scale?: number;
     dimmed?: boolean;
     rotate?: number;
+  };
+
+  type MoleculeLayer = {
+    id: Exclude<MoleculeCompartment, 'free'>;
+    maskId: string;
   };
 
   type ProtonFieldId = 'matrix' | 'intermembrane';
@@ -75,102 +100,112 @@
     delay: number;
   };
 
+  const BOARD = {
+    width: 1280,
+    height: 720
+  };
+
+  const MEMBRANES = {
+    cell: { cx: 640, cy: 368, rx: 548, ry: 292 },
+    mitoOuter: { cx: 800, cy: 390, rx: 382, ry: 205 },
+    mitoInner: { cx: 800, cy: 390, rx: 308, ry: 148 }
+  } satisfies Record<string, Ellipse>;
+
+  const CELL_MEMBRANE_PATH = ellipsePath(MEMBRANES.cell);
+  const OUTER_MITO_PATH = ellipsePath(MEMBRANES.mitoOuter);
+  const INNER_MITO_PATH = ellipsePath(MEMBRANES.mitoInner);
+  const CELL_RIM_PATH = ellipsePath({ ...MEMBRANES.cell, rx: MEMBRANES.cell.rx - 34, ry: MEMBRANES.cell.ry - 28 });
+
+  const MOLECULE_LAYERS: MoleculeLayer[] = [
+    { id: 'outside', maskId: 'outside-mask' },
+    { id: 'cytosol', maskId: 'cytosol-mask' },
+    { id: 'intermembrane', maskId: 'intermembrane-mask' },
+    { id: 'matrix', maskId: 'matrix-mask' }
+  ];
+
   const BOARD_ACTIONS: BoardAction[] = [
+    placeAction('import-glucose', pointOnEllipse(MEMBRANES.cell, -155), 170, 58, 'Importa glucosio', 'membrana cellulare', 12, -2),
+    placeAction('glycolysis', relativePoint(MEMBRANES.cell, -0.58, 0.3), 146, 58, 'Glicolisi', 'citoplasma'),
+    placeAction(
+      'import-pyruvate',
+      pointOnEllipse(MEMBRANES.mitoOuter, 176),
+      188,
+      58,
+      'Importa piruvato',
+      'membrana esterna',
+      18,
+      0
+    ),
+    placeAction('import-nadh', pointOnEllipse(MEMBRANES.mitoOuter, -145), 150, 58, 'Importa NADH', 'shuttle', 18, -10),
+    placeAction('krebs', relativePoint(MEMBRANES.mitoInner, -0.2, 0.02), 140, 58, 'Krebs', 'matrice'),
+    placeAction(
+      'etc',
+      pointOnEllipse(MEMBRANES.mitoInner, -36),
+      188,
+      56,
+      'Catena di trasporto',
+      'membrana interna',
+      -4,
+      -4
+    ),
+    placeAction('atp-synthase', pointOnEllipse(MEMBRANES.mitoInner, 47), 156, 56, 'ATP sintasi', 'membrana interna', 0, 8)
+  ];
+
+  const PROCESS_ARROWS = [
     {
-      id: 'import-glucose',
-      x: 72,
-      y: 236,
-      width: 170,
-      height: 58,
-      label: 'Importa glucosio',
-      hint: 'membrana cellulare'
+      className: 'glucose-arrow',
+      path: curvedPath(pointOnEllipse(MEMBRANES.cell, -155), relativePoint(MEMBRANES.cell, -0.48, -0.28), 24, -28)
     },
     {
-      id: 'glycolysis',
-      x: 300,
-      y: 332,
-      width: 146,
-      height: 58,
-      label: 'Glicolisi',
-      hint: 'citoplasma'
+      className: 'pyruvate-arrow',
+      path: curvedPath(relativePoint(MEMBRANES.cell, -0.22, 0.22), pointOnEllipse(MEMBRANES.mitoOuter, 176), 34, 26)
     },
     {
-      id: 'import-pyruvate',
-      x: 486,
-      y: 482,
-      width: 188,
-      height: 58,
-      label: 'Importa piruvato',
-      hint: 'membrana mitocondriale'
+      className: 'nadh-arrow',
+      path: curvedPath(relativePoint(MEMBRANES.cell, -0.18, -0.12), pointOnEllipse(MEMBRANES.mitoOuter, -145), 36, -24)
     },
     {
-      id: 'import-nadh',
-      x: 512,
-      y: 240,
-      width: 150,
-      height: 58,
-      label: 'Importa NADH',
-      hint: 'shuttle'
+      className: 'proton-arrow',
+      path: curvedPath(pointOnEllipse(MEMBRANES.mitoInner, -8), pointOnEllipse(MEMBRANES.mitoOuter, -22), 28, -20)
     },
     {
-      id: 'krebs',
-      x: 756,
-      y: 354,
-      width: 140,
-      height: 58,
-      label: 'Krebs',
-      hint: 'matrice'
-    },
-    {
-      id: 'etc',
-      x: 900,
-      y: 430,
-      width: 188,
-      height: 56,
-      label: 'Catena di trasporto',
-      hint: 'membrana interna'
-    },
-    {
-      id: 'atp-synthase',
-      x: 926,
-      y: 530,
-      width: 156,
-      height: 56,
-      label: 'ATP sintasi',
-      hint: 'membrana interna'
+      className: 'atp-arrow',
+      path: curvedPath(pointOnEllipse(MEMBRANES.mitoInner, 48), relativePoint(MEMBRANES.mitoInner, 0.18, 0.22), -36, 24)
     }
   ];
+
+  const CRISTA_PATHS = [cristaPath(-0.42, 0), cristaPath(0.02, 17), cristaPath(0.42, 31)];
 
   const PROTON_FIELDS: ProtonField[] = [
     {
       id: 'matrix',
       label: 'H+ matrice',
-      path: annularSectorPath(860, 405, 256, 128, 166, 84, -46, -8),
-      labelX: 984,
-      labelY: 348,
-      cx: 860,
-      cy: 405,
-      outerRx: 256,
-      outerRy: 128,
-      innerRx: 166,
-      innerRy: 84,
-      startDeg: -46,
-      endDeg: -8
+      path: annularSectorPath(MEMBRANES.mitoInner.cx, MEMBRANES.mitoInner.cy, 296, 142, 190, 107, -38, 36),
+      labelX: 1000,
+      labelY: 404,
+      cx: MEMBRANES.mitoInner.cx,
+      cy: MEMBRANES.mitoInner.cy,
+      outerRx: 296,
+      outerRy: 142,
+      innerRx: 190,
+      innerRy: 107,
+      startDeg: -38,
+      endDeg: 36
     },
     {
       id: 'intermembrane',
       label: 'H+ intermembrana',
-      path: annularSectorPath(860, 405, 350, 184, 266, 134, -46, -8),
-      labelX: 1068,
-      labelY: 288,
-      cx: 860,
-      cy: 405,
-      outerRx: 350,
-      outerRy: 184,
-      innerRx: 266,
-      innerRy: 134,
-      startDeg: -46,
-      endDeg: -8
+      path: annularSectorPath(MEMBRANES.mitoOuter.cx, MEMBRANES.mitoOuter.cy, 366, 192, 318, 152, -38, 36),
+      labelX: 1048,
+      labelY: 326,
+      cx: MEMBRANES.mitoOuter.cx,
+      cy: MEMBRANES.mitoOuter.cy,
+      outerRx: 366,
+      outerRy: 192,
+      innerRx: 318,
+      innerRy: 152,
+      startDeg: -38,
+      endDeg: 36
     }
   ];
 
@@ -250,164 +285,233 @@
 
   function getBoardIcons(state: GameState): BoardIcon[] {
     const resources = state.resources;
+    const waterCount = 4 + Math.min(4, Math.abs(resources.nWater));
 
     return [
-      ...makeIcons('glucose', resources.extGlucose, 100, 150, 'ext-glucose', {
-        cols: 1,
+      ...makeMoleculeIcons('glucose', resources.extGlucose, 'outside', 'ext-glucose', {
         max: 1,
         scale: 1.1
       }),
-      ...makeIcons('oxygen', 4, 95, 324, 'oxygen', { cols: 2, max: 4, scale: 0.92, dimmed: true }),
-      ...makeIcons('water', 4, 95, 438, 'water-out', { cols: 2, max: 4, scale: 0.92, dimmed: true }),
-      ...makeIcons('glucose', resources.cytGlucose, 284, 184, 'cyt-glucose', {
-        cols: 2,
+      ...makeMoleculeIcons('oxygen', 6, 'free', 'oxygen', { max: 6, scale: 0.82, dimmed: true, drift: 78 }),
+      ...makeMoleculeIcons('water', waterCount, 'free', 'water-free', {
+        max: 8,
+        scale: 0.76,
+        dimmed: resources.nWater === 0,
+        drift: 72
+      }),
+      ...makeMoleculeIcons('co2', resources.nCo2, 'free', 'co2', { max: 8, scale: 0.68, drift: 74 }),
+      ...makeMoleculeIcons('glucose', resources.cytGlucose, 'cytosol', 'cyt-glucose', {
         max: 2,
         scale: 1.05
       }),
-      ...makeIcons('pyruvate', resources.cytPyruvate, 284, 442, 'cyt-pyruvate', {
-        cols: 2,
+      ...makeMoleculeIcons('pyruvate', resources.cytPyruvate, 'cytosol', 'cyt-pyruvate', {
         max: 4
       }),
-      ...makeIcons('adp', resources.cytAdp, 285, 282, 'cyt-adp', {
-        layout: 'fan',
-        cols: 4,
-        dx: 18,
-        dy: 9,
-        rowY: 24,
+      ...makeMoleculeIcons('adp', resources.cytAdp, 'cytosol', 'cyt-adp', {
         max: 4,
         scale: 0.68
       }),
-      ...makeIcons('atp', resources.cytAtp, 210, 406, 'cyt-atp', {
-        layout: 'fan',
-        cols: 4,
-        dx: 18,
-        dy: 9,
-        rowY: 24,
+      ...makeMoleculeIcons('atp', resources.cytAtp, 'cytosol', 'cyt-atp', {
         max: 4,
         scale: 0.7
       }),
-      ...makeIcons('nad', resources.cytNad, 374, 240, 'cyt-nad', {
-        layout: 'fan',
-        cols: 4,
-        dx: 22,
-        dy: 7,
-        rowY: 24,
+      ...makeMoleculeIcons('nad', resources.cytNad, 'cytosol', 'cyt-nad', {
         max: 4,
         scale: 0.68
       }),
-      ...makeIcons('nadh', resources.cytNadh, 376, 410, 'cyt-nadh', {
-        layout: 'fan',
-        cols: 4,
-        dx: 22,
-        dy: 7,
-        rowY: 24,
+      ...makeMoleculeIcons('nadh', resources.cytNadh, 'cytosol', 'cyt-nadh', {
         max: 4,
         scale: 0.68
       }),
-      ...makeIcons('pyruvate', resources.mitPyruvate, 618, 326, 'mit-pyruvate', {
-        cols: 2,
+      ...makeMoleculeIcons('pyruvate', resources.mitPyruvate, 'matrix', 'mit-pyruvate', {
         max: 4,
         scale: 0.76
       }),
-      ...makeIcons('adp', resources.mitAdp, 780, 438, 'mit-adp', {
-        layout: 'fan',
-        cols: 6,
-        dx: 15,
-        dy: 7,
-        rowY: 30,
-        max: 12,
+      ...makeMoleculeIcons('adp', resources.mitAdp, 'matrix', 'mit-adp', {
+        max: 16,
         scale: 0.52
       }),
-      ...makeIcons('atp', resources.mitAtp, 1120, 488, 'mit-atp', {
-        layout: 'fan',
-        cols: 5,
-        dx: 16,
-        dy: 7,
-        rowY: 28,
+      ...makeMoleculeIcons('atp', resources.mitAtp, 'matrix', 'mit-atp', {
         max: 10,
         scale: 0.48
       }),
-      ...makeIcons('nad', resources.mitNad, 628, 402, 'mit-nad', {
-        layout: 'fan',
-        cols: 5,
-        dx: 19,
-        dy: 7,
-        rowY: 30,
+      ...makeMoleculeIcons('nad', resources.mitNad, 'matrix', 'mit-nad', {
         max: 10,
         scale: 0.54
       }),
-      ...makeIcons('nadh', resources.mitNadh, 700, 518, 'mit-nadh', {
-        layout: 'fan',
-        cols: 5,
-        dx: 19,
-        dy: 7,
-        rowY: 30,
+      ...makeMoleculeIcons('nadh', resources.mitNadh, 'matrix', 'mit-nadh', {
         max: 10,
         scale: 0.54
       }),
-      ...makeIcons('fad', resources.mitFad, 1194, 410, 'mit-fad', {
-        layout: 'fan',
-        cols: 4,
-        dx: 18,
-        dy: 8,
+      ...makeMoleculeIcons('fad', resources.mitFad, 'matrix', 'mit-fad', {
         max: 4,
         scale: 0.56
       }),
-      ...makeIcons('fadh2', resources.mitFadh2, 1194, 452, 'mit-fadh2', {
-        layout: 'fan',
-        cols: 4,
-        dx: 18,
-        dy: 8,
+      ...makeMoleculeIcons('fadh2', resources.mitFadh2, 'matrix', 'mit-fadh2', {
         max: 4,
         scale: 0.56
-      }),
-      ...makeIcons('co2', resources.nCo2, 1162, 538, 'co2', { cols: 2, dx: 38, dy: 40, max: 6, scale: 0.66 }),
-      ...makeIcons('water', Math.max(0, resources.nWater), 1110, 422, 'water-product', {
-        cols: 2,
-        max: 6,
-        scale: 0.82
       })
     ];
   }
 
-  function makeIcons(
+  function makeMoleculeIcons(
     kind: TokenKind,
     count: number,
-    x: number,
-    y: number,
+    compartment: MoleculeCompartment,
     key: string,
     options: {
-      layout?: 'grid' | 'fan';
-      cols?: number;
-      dx?: number;
-      dy?: number;
-      rowY?: number;
       max?: number;
       scale?: number;
       dimmed?: boolean;
+      drift?: number;
     } = {}
   ): BoardIcon[] {
-    const cols = options.cols ?? 3;
-    const dx = options.dx ?? 58;
-    const dy = options.dy ?? 48;
     const max = options.max ?? 8;
     const visibleCount = Math.min(max, Math.max(0, Math.round(count)));
 
-    return Array.from({ length: visibleCount }, (_, index) => ({
-      key: `${key}-${index}`,
-      kind,
-      x:
-        options.layout === 'fan'
-          ? x + (index % cols) * dx
-          : x + (index % cols) * dx,
-      y:
-        options.layout === 'fan'
-          ? y + (index % cols) * dy + Math.floor(index / cols) * (options.rowY ?? dy)
-          : y + Math.floor(index / cols) * dy,
-      scale: options.scale,
-      dimmed: options.dimmed,
-      rotate: options.layout === 'fan' ? (index % cols) * 2 - Math.min(cols, visibleCount) : 0
-    }));
+    return Array.from({ length: visibleCount }, (_, index) => {
+      const seed = hashString(`${key}-${index}`);
+      const point = randomPointInCompartment(compartment, seed);
+      const drift = moleculeDrift(compartment, point, seed + 47, options.drift);
+
+      return {
+        key: `${key}-${index}`,
+        kind,
+        compartment,
+        x: point.x,
+        y: point.y,
+        driftX: drift.x,
+        driftY: drift.y,
+        duration: 7 + pseudoRandom(seed + 59) * 8,
+        delay: pseudoRandom(seed + 61) * 10,
+        spin: -8 + pseudoRandom(seed + 67) * 16,
+        scale: options.scale,
+        dimmed: options.dimmed,
+        rotate: -10 + pseudoRandom(seed + 71) * 20
+      };
+    });
+  }
+
+  function randomPointInCompartment(compartment: MoleculeCompartment, seed: number): Point {
+    switch (compartment) {
+      case 'free':
+        return {
+          x: roundSvg(70 + pseudoRandom(seed + 3) * (BOARD.width - 140)),
+          y: roundSvg(70 + pseudoRandom(seed + 5) * (BOARD.height - 140))
+        };
+      case 'matrix':
+        return sampleInEllipse(MEMBRANES.mitoInner, seed, 0.78);
+      case 'intermembrane':
+        return sampleInEllipticalBand(MEMBRANES.mitoInner, MEMBRANES.mitoOuter, seed);
+      case 'cytosol':
+        return randomPointByRejection(seed, (point) => pointInCompartment(point, 'cytosol'), relativePoint(MEMBRANES.cell, -0.48, 0));
+      case 'outside':
+        return randomPointByRejection(seed, (point) => pointInCompartment(point, 'outside'), { x: 84, y: 112 });
+    }
+  }
+
+  function moleculeDrift(
+    compartment: MoleculeCompartment,
+    point: Point,
+    seed: number,
+    preferredAmplitude?: number
+  ): Point {
+    const amplitude =
+      preferredAmplitude ??
+      {
+        outside: 42,
+        cytosol: 34,
+        intermembrane: 20,
+        matrix: 26,
+        free: 70
+      }[compartment];
+    const theta = pseudoRandom(seed) * Math.PI * 2;
+    const distance = amplitude * (0.45 + pseudoRandom(seed + 1) * 0.55);
+    const dx = Math.cos(theta) * distance;
+    const dy = Math.sin(theta) * distance;
+
+    for (const factor of [1, 0.74, 0.5, 0.28, 0.12]) {
+      const endpoint = { x: point.x + dx * factor, y: point.y + dy * factor };
+
+      if (pointInCompartment(endpoint, compartment)) {
+        return { x: roundSvg(dx * factor), y: roundSvg(dy * factor) };
+      }
+    }
+
+    return { x: 0, y: 0 };
+  }
+
+  function randomPointByRejection(seed: number, accepts: (point: Point) => boolean, fallback: Point): Point {
+    for (let attempt = 0; attempt < 70; attempt += 1) {
+      const point = {
+        x: roundSvg(54 + pseudoRandom(seed + attempt * 11) * (BOARD.width - 108)),
+        y: roundSvg(54 + pseudoRandom(seed + attempt * 17) * (BOARD.height - 108))
+      };
+
+      if (accepts(point)) {
+        return point;
+      }
+    }
+
+    return fallback;
+  }
+
+  function sampleInEllipse(ellipse: Ellipse, seed: number, shrink = 1): Point {
+    const theta = pseudoRandom(seed + 7) * Math.PI * 2;
+    const radius = Math.sqrt(pseudoRandom(seed + 13)) * shrink;
+
+    return {
+      x: roundSvg(ellipse.cx + Math.cos(theta) * ellipse.rx * radius),
+      y: roundSvg(ellipse.cy + Math.sin(theta) * ellipse.ry * radius)
+    };
+  }
+
+  function sampleInEllipticalBand(inner: Ellipse, outer: Ellipse, seed: number): Point {
+    const theta = pseudoRandom(seed + 19) * Math.PI * 2;
+    const band = 0.2 + pseudoRandom(seed + 23) * 0.68;
+    const rx = inner.rx * 1.05 + (outer.rx * 0.94 - inner.rx * 1.05) * band;
+    const ry = inner.ry * 1.05 + (outer.ry * 0.94 - inner.ry * 1.05) * band;
+
+    return {
+      x: roundSvg(outer.cx + Math.cos(theta) * rx),
+      y: roundSvg(outer.cy + Math.sin(theta) * ry)
+    };
+  }
+
+  function pointInCompartment(point: Point, compartment: MoleculeCompartment): boolean {
+    switch (compartment) {
+      case 'free':
+        return isInsideBoard(point, 46);
+      case 'outside':
+        return isInsideBoard(point, 46) && !isInsideEllipse(point, MEMBRANES.cell, 1.04);
+      case 'cytosol':
+        return isInsideEllipse(point, MEMBRANES.cell, 0.92) && !isInsideEllipse(point, MEMBRANES.mitoOuter, 1.08);
+      case 'intermembrane':
+        return isInsideEllipse(point, MEMBRANES.mitoOuter, 0.96) && !isInsideEllipse(point, MEMBRANES.mitoInner, 1.05);
+      case 'matrix':
+        return isInsideEllipse(point, MEMBRANES.mitoInner, 0.86);
+    }
+  }
+
+  function isInsideBoard(point: Point, margin: number): boolean {
+    return point.x >= margin && point.x <= BOARD.width - margin && point.y >= margin && point.y <= BOARD.height - margin;
+  }
+
+  function isInsideEllipse(point: Point, ellipse: Ellipse, scale = 1): boolean {
+    const normalizedX = (point.x - ellipse.cx) / (ellipse.rx * scale);
+    const normalizedY = (point.y - ellipse.cy) / (ellipse.ry * scale);
+
+    return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
+  }
+
+  function hashString(value: string): number {
+    let hash = 0;
+
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+    }
+
+    return hash + 1;
   }
 
   function getProtonDots(state: GameState): ProtonDot[] {
@@ -451,6 +555,79 @@
   function pseudoRandom(seed: number): number {
     const value = Math.sin(seed * 12.9898) * 43758.5453;
     return value - Math.floor(value);
+  }
+
+  function placeAction(
+    id: StepId,
+    center: Point,
+    width: number,
+    height: number,
+    label: string,
+    hint: string,
+    offsetX = 0,
+    offsetY = 0
+  ): BoardAction {
+    return {
+      id,
+      x: roundSvg(center.x - width / 2 + offsetX),
+      y: roundSvg(center.y - height / 2 + offsetY),
+      width,
+      height,
+      label,
+      hint
+    };
+  }
+
+  function ellipsePath(ellipse: Ellipse): string {
+    return [
+      `M ${roundSvg(ellipse.cx - ellipse.rx)} ${ellipse.cy}`,
+      `A ${ellipse.rx} ${ellipse.ry} 0 1 1 ${roundSvg(ellipse.cx + ellipse.rx)} ${ellipse.cy}`,
+      `A ${ellipse.rx} ${ellipse.ry} 0 1 1 ${roundSvg(ellipse.cx - ellipse.rx)} ${ellipse.cy}`,
+      'Z'
+    ].join(' ');
+  }
+
+  function pointOnEllipse(ellipse: Ellipse, deg: number): Point {
+    return ellipsePoint(ellipse.cx, ellipse.cy, ellipse.rx, ellipse.ry, deg);
+  }
+
+  function relativePoint(ellipse: Ellipse, relX: number, relY: number): Point {
+    return {
+      x: roundSvg(ellipse.cx + ellipse.rx * relX),
+      y: roundSvg(ellipse.cy + ellipse.ry * relY)
+    };
+  }
+
+  function curvedPath(start: Point, end: Point, liftX = 0, liftY = 0): string {
+    const c1 = {
+      x: start.x + (end.x - start.x) * 0.35 + liftX,
+      y: start.y + (end.y - start.y) * 0.25 + liftY
+    };
+    const c2 = {
+      x: start.x + (end.x - start.x) * 0.72 - liftX,
+      y: start.y + (end.y - start.y) * 0.78 - liftY
+    };
+
+    return `M ${start.x} ${start.y} C ${roundSvg(c1.x)} ${roundSvg(c1.y)} ${roundSvg(c2.x)} ${roundSvg(c2.y)} ${end.x} ${end.y}`;
+  }
+
+  function cristaPath(row: number, seed: number): string {
+    const inner = MEMBRANES.mitoInner;
+    const start = relativePoint(inner, -0.82, row);
+    const end = relativePoint(inner, 0.66, row + 0.02);
+    const wave = 38 + (seed % 3) * 5;
+    const midY = inner.cy + inner.ry * row;
+
+    return [
+      `M ${start.x} ${start.y}`,
+      `C ${roundSvg(inner.cx - inner.rx * 0.56)} ${roundSvg(midY - wave)}`,
+      `${roundSvg(inner.cx - inner.rx * 0.34)} ${roundSvg(midY + wave)}`,
+      `${roundSvg(inner.cx - inner.rx * 0.12)} ${roundSvg(midY)}`,
+      `S ${roundSvg(inner.cx + inner.rx * 0.18)} ${roundSvg(midY - wave)}`,
+      `${roundSvg(inner.cx + inner.rx * 0.42)} ${roundSvg(midY - 2)}`,
+      `S ${roundSvg(inner.cx + inner.rx * 0.58)} ${roundSvg(midY + wave * 0.62)}`,
+      `${end.x} ${end.y}`
+    ].join(' ');
   }
 
   function annularSectorPath(
@@ -658,6 +835,24 @@
           <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#273241" flood-opacity="0.18" />
           </filter>
+          <mask id="outside-mask" maskUnits="userSpaceOnUse">
+            <rect x="0" y="0" width={BOARD.width} height={BOARD.height} fill="white" />
+            <path d={CELL_MEMBRANE_PATH} fill="black" />
+          </mask>
+          <mask id="cytosol-mask" maskUnits="userSpaceOnUse">
+            <rect x="0" y="0" width={BOARD.width} height={BOARD.height} fill="black" />
+            <path d={CELL_MEMBRANE_PATH} fill="white" />
+            <path d={OUTER_MITO_PATH} fill="black" />
+          </mask>
+          <mask id="intermembrane-mask" maskUnits="userSpaceOnUse">
+            <rect x="0" y="0" width={BOARD.width} height={BOARD.height} fill="black" />
+            <path d={OUTER_MITO_PATH} fill="white" />
+            <path d={INNER_MITO_PATH} fill="black" />
+          </mask>
+          <mask id="matrix-mask" maskUnits="userSpaceOnUse">
+            <rect x="0" y="0" width={BOARD.width} height={BOARD.height} fill="black" />
+            <path d={INNER_MITO_PATH} fill="white" />
+          </mask>
           {#each PROTON_FIELDS as field}
             <clipPath id={`proton-clip-${field.id}`}>
               <path d={field.path} />
@@ -730,32 +925,15 @@
 
         <rect class="board-bg" x="0" y="0" width="1280" height="720" rx="34" />
 
-        <text class="zone-label outside-label" x="88" y="96">Esterno</text>
-        <text class="zone-label cytosol-label" x="280" y="126">Citoplasma</text>
-        <text class="zone-label matrix-label" x="742" y="178">Matrice mitocondriale</text>
-        <text class="zone-label membrane-label" x="932" y="196">Membrana interna</text>
-
-        <path
-          class="cell-shape"
-          d="M156 378 C96 246 158 95 328 72 C474 52 544 128 650 102 C846 55 1124 124 1190 314 C1258 508 1024 654 806 620 C655 596 536 648 383 612 C246 580 213 474 156 378 Z"
-        />
-        <path
-          class="cell-rim"
-          d="M190 371 C146 255 191 125 337 103 C474 82 553 157 660 132 C828 91 1070 151 1137 318 C1194 462 1010 594 813 565 C650 541 544 601 405 568 C292 541 246 454 190 371 Z"
-        />
+        <path class="cell-shape" d={CELL_MEMBRANE_PATH} />
+        <path class="cell-rim" d={CELL_RIM_PATH} />
 
         <g class="mito-art" filter="url(#softShadow)">
-          <path
-            class="outer-mito"
-            d="M526 366 C526 266 640 207 795 204 C910 201 1026 217 1101 272 C1174 326 1214 407 1172 482 C1129 560 986 583 822 562 C658 541 526 478 526 366 Z"
-          />
-          <path
-            class="inner-membrane"
-            d="M604 368 C604 296 696 250 820 250 C922 250 1024 265 1085 314 C1138 357 1150 430 1102 475 C1049 527 931 536 813 520 C684 503 604 454 604 368 Z"
-          />
-          <path class="crista" d="M602 360 C670 294 723 430 790 359 C861 284 921 436 1000 356" />
-          <path class="crista" d="M626 425 C698 354 754 482 825 413 C890 350 954 459 1010 405" />
-          <path class="crista" d="M630 300 C704 242 764 363 835 298 C907 234 963 344 1012 292" />
+          <path class="outer-mito" d={OUTER_MITO_PATH} />
+          <path class="inner-membrane" d={INNER_MITO_PATH} />
+          {#each CRISTA_PATHS as path}
+            <path class="crista" d={path} />
+          {/each}
         </g>
 
         {#each PROTON_FIELDS as field}
@@ -776,19 +954,43 @@
           </g>
         {/each}
 
-        <path class="process-arrow glucose-arrow" d="M142 184 C182 190 205 214 222 246" />
-        <path class="process-arrow pyruvate-arrow" d="M424 448 C486 456 520 448 552 426" />
-        <path class="process-arrow nadh-arrow" d="M454 332 C510 306 536 268 562 254" />
-        <path class="process-arrow proton-arrow" d="M990 374 C1018 346 1056 316 1100 290" />
-        <path class="process-arrow atp-arrow" d="M1085 498 C1034 526 972 528 920 500" />
+        {#each PROCESS_ARROWS as arrow}
+          <path class={`process-arrow ${arrow.className}`} d={arrow.path} />
+        {/each}
 
-        {#each boardIcons as icon}
-          <g
-            class={`molecule ${icon.kind}`}
-            class:dimmed={icon.dimmed}
-            transform={`translate(${icon.x} ${icon.y}) rotate(${icon.rotate ?? 0}) scale(${icon.scale ?? 1})`}
-          >
-            <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
+        <g class="zone-labels">
+          <text class="zone-label outside-label" x="54" y="62">Esterno</text>
+          <text class="zone-label cytosol-label" x="246" y="142">Citoplasma</text>
+          <text class="zone-label intermembrane-label" x="900" y="248">Spazio intermembrana</text>
+          <text class="zone-label matrix-label" x="620" y="300">Matrice mitocondriale</text>
+          <text class="zone-label membrane-label" x="958" y="456">Membrana interna</text>
+        </g>
+
+        {#each MOLECULE_LAYERS as layer}
+          <g class={`molecule-layer ${layer.id}`} mask={`url(#${layer.maskId})`}>
+            {#each boardIcons.filter((icon) => icon.compartment === layer.id) as icon}
+              <g transform={`translate(${icon.x} ${icon.y})`}>
+                <g
+                  class={`molecule ${icon.kind}`}
+                  class:dimmed={icon.dimmed}
+                  style={`--drift-x: ${icon.driftX}px; --drift-y: ${icon.driftY}px; --duration: ${icon.duration}s; --delay: -${icon.delay}s; --spin: ${icon.spin}deg; --base-rotate: ${icon.rotate ?? 0}deg; --scale: ${icon.scale ?? 1}`}
+                >
+                  <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
+                </g>
+              </g>
+            {/each}
+          </g>
+        {/each}
+
+        {#each boardIcons.filter((icon) => icon.compartment === 'free') as icon}
+          <g transform={`translate(${icon.x} ${icon.y})`}>
+            <g
+              class={`molecule ${icon.kind}`}
+              class:dimmed={icon.dimmed}
+              style={`--drift-x: ${icon.driftX}px; --drift-y: ${icon.driftY}px; --duration: ${icon.duration}s; --delay: -${icon.delay}s; --spin: ${icon.spin}deg; --base-rotate: ${icon.rotate ?? 0}deg; --scale: ${icon.scale ?? 1}`}
+            >
+              <use href={`#icon-${icon.kind}`} x="-38" y="-38" width="76" height="76" />
+            </g>
           </g>
         {/each}
 
