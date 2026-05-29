@@ -4,6 +4,8 @@ Web app statica single page per giocare in classe con gli step della respirazion
 
 Gli studenti giocano a squadre. A ogni turno la squadra attiva sceglie uno step: se i reagenti necessari sono disponibili nel compartimento corretto, ottiene i punti previsti; se lo step non puo essere svolto, perde 1 punto. La prima bozza riproduce la logica del vecchio PowerPoint con macro e aggiunge la scelta del numero di squadre.
 
+La plancia principale e disegnata come uno schema SVG a schermo intero: molecole e azioni sono collocate nel compartimento in cui si trovano o avvengono, mentre la reazione complessiva mostra i coefficienti aggiornati durante la partita. La legenda degli step e lo storico mosse sono raccolti in un popup raggiungibile dal pulsante con il libro.
+
 ## Stack
 
 - SvelteKit + TypeScript

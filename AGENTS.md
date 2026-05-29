@@ -43,5 +43,7 @@ Step e punteggi:
 ## Stile dell'app
 
 - L'app deve restare una plancia di gioco, non una landing page.
+- La grafica principale e una plancia SVG full-screen: mantenere molecole e azioni dentro lo schema della cellula, non in pannelli laterali persistenti.
+- Reagenti e prodotti vanno mostrati come icone, senza contatori numerici accanto alle icone. I coefficienti numerici sono invece ammessi nella reazione complessiva.
 - La grafica deve rendere leggibili compartimenti, reagenti, prodotti e punteggi su schermo da aula.
 - Evitare di disabilitare gli step in base allo stato, per non togliere la scelta agli studenti.
