@@ -65,6 +65,8 @@ export interface MoveResult {
   teamName: string;
   teamColor: string;
   pointsDelta: number;
+  potentialPointsDelta: number;
+  tutorial: boolean;
   message: string;
   missing: string[];
   gameOver: boolean;
@@ -79,6 +81,7 @@ export interface GameState {
   history: MoveResult[];
   lastResult: MoveResult | null;
   completed: boolean;
+  tutorialCompleted: boolean;
   winnerIds: number[];
 }
 
@@ -375,6 +378,7 @@ export function createGame(teamNames = defaultTeamNames(5)): GameState {
     history: [],
     lastResult: null,
     completed: false,
+    tutorialCompleted: false,
     winnerIds: []
   };
 }
@@ -414,15 +418,21 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
   const resources = { ...state.resources };
   const teams = state.teams.map((team) => ({ ...team }));
   const activeTeam = teams[state.activeTeamIndex];
+  const tutorial = !state.tutorialCompleted;
   const missing = getMissingRequirements(resources, stepId);
   const success = missing.length === 0;
-  const pointsDelta = success ? step.prize : -1;
+  const potentialPointsDelta = success ? step.prize : -1;
+  const pointsDelta = tutorial ? 0 : potentialPointsDelta;
 
   if (success) {
     applyStep(resources, stepId);
   }
 
-  activeTeam.score += pointsDelta;
+  if (!tutorial) {
+    activeTeam.score += pointsDelta;
+  }
+
+  const tutorialCompleted = state.tutorialCompleted || (tutorial && success && stepId === 'glycolysis');
   const completed = totalAtp(resources) >= TARGET_ATP;
   const winnerScore = Math.max(...teams.map((team) => team.score));
   const winnerIds = completed ? teams.filter((team) => team.score === winnerScore).map((team) => team.id) : [];
@@ -432,9 +442,11 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
     success,
     stepId,
     stepLabel: step.label,
-    teamName: activeTeam.name,
-    teamColor: activeTeam.color,
+    teamName: tutorial ? 'Tutorial' : activeTeam.name,
+    teamColor: tutorial ? '#2f9e8f' : activeTeam.color,
     pointsDelta,
+    potentialPointsDelta,
+    tutorial,
     missing,
     message: success ? successMessage(stepId) : `Mancano: ${missing.join(', ')}.`,
     gameOver: completed,
@@ -445,11 +457,12 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
     ...state,
     teams,
     resources,
-    activeTeamIndex: (state.activeTeamIndex + 1) % state.teams.length,
-    turn: state.turn + 1,
+    activeTeamIndex: tutorial ? 0 : (state.activeTeamIndex + 1) % state.teams.length,
+    turn: tutorial ? 1 : state.turn + 1,
     lastResult: result,
     history: [result, ...state.history].slice(0, 8),
     completed,
+    tutorialCompleted,
     winnerIds
   };
 }

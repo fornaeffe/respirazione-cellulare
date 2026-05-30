@@ -298,6 +298,7 @@
   $: activeTeam = game.teams[game.activeTeamIndex];
   $: leadingScore = Math.max(...game.teams.map((team) => team.score));
   $: gameFinished = game.completed;
+  $: tutorialActive = !game.tutorialCompleted;
   $: protonDots = getProtonDots(game);
   $: reaction = getReactionProgress(game.resources);
 
@@ -813,6 +814,26 @@
     return `Vincono ${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
   }
 
+  function feedbackSubjectLabel(result: MoveResult): string {
+    if (result.gameOver) {
+      return winnerLabel(result.winnerNames);
+    }
+
+    return result.tutorial ? 'Tutorial' : result.teamName;
+  }
+
+  function feedbackPointsLabel(result: MoveResult): string {
+    const points = result.tutorial ? result.potentialPointsDelta : result.pointsDelta;
+    const amount = Math.abs(points);
+    const unit = amount === 1 ? 'punto' : 'punti';
+
+    if (result.tutorial) {
+      return points >= 0 ? `Avreste guadagnato ${amount} ${unit}` : `Avreste perso ${amount} ${unit}`;
+    }
+
+    return `${points > 0 ? '+' : ''}${points} ${unit}`;
+  }
+
   function trackMolecule(node: SVGGElement, molecule: BoardIcon) {
     moleculeElements.set(molecule.id, node);
     node.setAttribute('transform', moleculeTransform(molecule));
@@ -1290,30 +1311,36 @@
       </div>
     </header>
 
-    <section class="scoreboard" aria-label="Punteggi squadre">
-      {#each game.teams as team, index}
-        <article
-          class:active={!gameFinished && index === game.activeTeamIndex}
-          class:leading={!gameFinished && team.score === leadingScore && leadingScore > 0}
-          class:winner={gameFinished && game.winnerIds.includes(team.id)}
-          class="score-card"
-          style={`--team-color: ${team.color}`}
-        >
-          <span class="team-color"></span>
-          <div>
-            <p>{team.name}</p>
-            <strong>{team.score}</strong>
-          </div>
-          {#if gameFinished && game.winnerIds.includes(team.id)}
-            <span class="winner-chip"><Trophy size={16} /> Vince</span>
-          {:else if !gameFinished && index === game.activeTeamIndex}
-            <span class="turn-chip">Tocca a voi</span>
-          {:else if !gameFinished && team.score === leadingScore && leadingScore > 0}
-            <Trophy size={18} />
-          {/if}
-        </article>
-      {/each}
-    </section>
+    {#if tutorialActive}
+      <section class="tutorial-banner" aria-label="Tutorial">
+        <strong>Tutorial: completa la glicolisi!</strong>
+      </section>
+    {:else}
+      <section class="scoreboard" aria-label="Punteggi squadre">
+        {#each game.teams as team, index}
+          <article
+            class:active={!gameFinished && index === game.activeTeamIndex}
+            class:leading={!gameFinished && team.score === leadingScore && leadingScore > 0}
+            class:winner={gameFinished && game.winnerIds.includes(team.id)}
+            class="score-card"
+            style={`--team-color: ${team.color}`}
+          >
+            <span class="team-color"></span>
+            <div>
+              <p>{team.name}</p>
+              <strong>{team.score}</strong>
+            </div>
+            {#if gameFinished && game.winnerIds.includes(team.id)}
+              <span class="winner-chip"><Trophy size={16} /> Vince</span>
+            {:else if !gameFinished && index === game.activeTeamIndex}
+              <span class="turn-chip">Tocca a voi</span>
+            {:else if !gameFinished && team.score === leadingScore && leadingScore > 0}
+              <Trophy size={18} />
+            {/if}
+          </article>
+        {/each}
+      </section>
+    {/if}
 
     <section class="board-shell" class:transitioning={moleculeTransitioning} aria-label="Schema della cellula">
       <svg class="board-svg" viewBox="0 0 1280 720" role="img" aria-label="Cellula con mitocondrio, molecole e azioni">
@@ -1465,8 +1492,8 @@
             aria-live="polite"
           >
             <span class="feedback-title">{feedback.gameOver ? 'Partita conclusa!' : feedback.success ? 'Operazione riuscita!' : 'Non puoi farlo!'}</span>
-            <strong>{feedback.gameOver ? winnerLabel(feedback.winnerNames) : feedback.teamName}</strong>
-            <span class="feedback-points">{feedback.pointsDelta > 0 ? '+' : ''}{feedback.pointsDelta} punti</span>
+            <strong>{feedbackSubjectLabel(feedback)}</strong>
+            <span class="feedback-points">{feedbackPointsLabel(feedback)}</span>
             <small>{feedback.gameOver ? `${TARGET_ATP} ATP raggiunti con ${feedback.stepLabel}` : feedback.stepLabel}</small>
           </span>
         </button>

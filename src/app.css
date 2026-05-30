@@ -388,6 +388,27 @@ input[type='range'] {
   gap: 8px;
 }
 
+.tutorial-banner {
+  display: grid;
+  min-height: 62px;
+  place-items: center;
+  padding: 10px 16px;
+  border: 1px solid rgba(47, 158, 143, 0.3);
+  border-radius: 14px;
+  color: #1d6159;
+  background:
+    linear-gradient(135deg, rgba(47, 158, 143, 0.16), rgba(255, 255, 255, 0.86)),
+    #ffffff;
+  box-shadow: 0 12px 34px rgba(23, 33, 43, 0.08);
+  text-align: center;
+}
+
+.tutorial-banner strong {
+  font-size: clamp(1.3rem, 2vw, 2rem);
+  font-weight: 950;
+  line-height: 1;
+}
+
 .score-card {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;

@@ -15,6 +15,7 @@ describe('cellular respiration game', () => {
 
     expect(game.teams).toHaveLength(5);
     expect(game.activeTeamIndex).toBe(0);
+    expect(game.tutorialCompleted).toBe(false);
     expect(game.resources.extGlucose).toBe(1);
     expect(game.resources.cytAdp).toBe(2);
     expect(game.resources.mitAdp).toBe(30);
@@ -25,22 +26,54 @@ describe('cellular respiration game', () => {
     expect(game.resources.freeCo2).toBe(0);
   });
 
-  it('penalizes an impossible step and advances the active team', () => {
-    const game = attemptStep(createGame(['A', 'B']), 'glycolysis');
+  it('keeps tutorial moves unscored and starts the real game from team one', () => {
+    let game = createGame(['A', 'B']);
+
+    game = attemptStep(game, 'glycolysis');
+
+    expect(game.lastResult?.success).toBe(false);
+    expect(game.lastResult?.tutorial).toBe(true);
+    expect(game.lastResult?.pointsDelta).toBe(0);
+    expect(game.lastResult?.potentialPointsDelta).toBe(-1);
+    expect(game.teams.map((team) => team.score)).toEqual([0, 0]);
+    expect(game.activeTeamIndex).toBe(0);
+
+    game = attemptStep(game, 'import-glucose');
+    game = attemptStep(game, 'glycolysis');
+
+    expect(game.tutorialCompleted).toBe(true);
+    expect(game.teams.map((team) => team.score)).toEqual([0, 0]);
+    expect(game.activeTeamIndex).toBe(0);
+    expect(game.turn).toBe(1);
+
+    game = attemptStep(game, 'import-pyruvate');
+
+    expect(game.teams.map((team) => team.score)).toEqual([1, 0]);
+    expect(game.activeTeamIndex).toBe(1);
+  });
+
+  it('penalizes an impossible real-game step and advances the active team', () => {
+    let game = createGame(['A', 'B']);
+
+    game = attemptStep(game, 'import-glucose');
+    game = attemptStep(game, 'glycolysis');
+    game = attemptStep(game, 'glycolysis');
 
     expect(game.lastResult?.success).toBe(false);
     expect(game.teams[0].score).toBe(-1);
     expect(game.activeTeamIndex).toBe(1);
   });
 
-  it('runs glucose import and glycolysis with the original scoring', () => {
+  it('runs glucose import and glycolysis as a neutral setup', () => {
     let game = createGame(['A', 'B']);
 
     game = attemptStep(game, 'import-glucose');
     game = attemptStep(game, 'glycolysis');
 
-    expect(game.teams[0].score).toBe(1);
-    expect(game.teams[1].score).toBe(3);
+    expect(game.teams[0].score).toBe(0);
+    expect(game.teams[1].score).toBe(0);
+    expect(game.activeTeamIndex).toBe(0);
+    expect(game.tutorialCompleted).toBe(true);
     expect(game.resources.cytPyruvate).toBe(2);
     expect(game.resources.cytAtp).toBe(2);
     expect(game.resources.cytNadh).toBe(2);
