@@ -694,7 +694,41 @@
       return;
     }
 
+    if (bounceMoleculeOffBoundary(molecule, next)) {
+      return;
+    }
+
     steerMoleculeInside(molecule);
+  }
+
+  function bounceMoleculeOffBoundary(molecule: BoardIcon, next: Point): boolean {
+    if (molecule.compartment !== 'outside') {
+      return false;
+    }
+
+    if (!isInsideBoard(next, 46)) {
+      molecule.vx = next.x < 46 || next.x > BOARD.width - 46 ? -molecule.vx : molecule.vx;
+      molecule.vy = next.y < 46 || next.y > BOARD.height - 46 ? -molecule.vy : molecule.vy;
+      molecule.x = Math.min(BOARD.width - 46, Math.max(46, molecule.x));
+      molecule.y = Math.min(BOARD.height - 46, Math.max(46, molecule.y));
+      return true;
+    }
+
+    if (!isInsideEllipse(next, MEMBRANES.cell, 1.04)) {
+      return false;
+    }
+
+    const normal = ellipseNormalAtPoint(next, MEMBRANES.cell);
+    const velocityAlongNormal = molecule.vx * normal.x + molecule.vy * normal.y;
+
+    molecule.vx -= 2 * velocityAlongNormal * normal.x;
+    molecule.vy -= 2 * velocityAlongNormal * normal.y;
+
+    const safePoint = pointOutsideEllipse(next, MEMBRANES.cell, 1.045);
+    molecule.x = safePoint.x;
+    molecule.y = safePoint.y;
+
+    return true;
   }
 
   function steerMoleculeInside(molecule: BoardIcon) {
@@ -926,6 +960,29 @@
     const normalizedY = (point.y - ellipse.cy) / (ellipse.ry * scale);
 
     return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
+  }
+
+  function ellipseNormalAtPoint(point: Point, ellipse: Ellipse): Point {
+    const nx = (point.x - ellipse.cx) / (ellipse.rx * ellipse.rx);
+    const ny = (point.y - ellipse.cy) / (ellipse.ry * ellipse.ry);
+    const length = Math.hypot(nx, ny) || 1;
+
+    return {
+      x: nx / length,
+      y: ny / length
+    };
+  }
+
+  function pointOutsideEllipse(point: Point, ellipse: Ellipse, scale: number): Point {
+    const dx = point.x - ellipse.cx;
+    const dy = point.y - ellipse.cy;
+    const normalizedDistance = Math.hypot(dx / ellipse.rx, dy / ellipse.ry) || 1;
+    const factor = scale / normalizedDistance;
+
+    return {
+      x: roundSvg(ellipse.cx + dx * factor),
+      y: roundSvg(ellipse.cy + dy * factor)
+    };
   }
 
   function hashString(value: string): number {
