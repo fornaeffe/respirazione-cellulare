@@ -45,11 +45,17 @@ export interface Resources {
   mitFadh2: number;
   mitH: number;
   intH: number;
-  nGlucose: number;
-  nOxygen: number;
-  nCo2: number;
-  nWater: number;
-  nAtp: number;
+  freeOxygen: number;
+  freeCo2: number;
+  freeWater: number;
+}
+
+export interface ReactionProgress {
+  glucose: number;
+  oxygen: number;
+  co2: number;
+  water: number;
+  atp: number;
 }
 
 export interface MoveResult {
@@ -95,7 +101,7 @@ export interface ResourceToken {
 }
 
 export interface CompartmentView {
-  id: 'outside' | 'cytosol' | 'matrix' | 'intermembrane' | 'balance';
+  id: 'outside' | 'cytosol' | 'matrix' | 'intermembrane' | 'board' | 'balance';
   label: string;
   detail: string;
   tokens: ResourceToken[];
@@ -113,6 +119,9 @@ const TEAM_COLORS = [
 ];
 
 export const TARGET_ATP = 32;
+
+const INITIAL_FREE_OXYGEN = 6;
+const INITIAL_FREE_WATER = 6;
 
 export const STEP_DEFINITIONS: StepDefinition[] = [
   {
@@ -200,11 +209,9 @@ export function initialResources(): Resources {
     mitFadh2: 0,
     mitH: 120,
     intH: 120,
-    nGlucose: 0,
-    nOxygen: 0,
-    nCo2: 0,
-    nWater: 0,
-    nAtp: 0
+    freeOxygen: INITIAL_FREE_OXYGEN,
+    freeCo2: 0,
+    freeWater: INITIAL_FREE_WATER
   };
 }
 
@@ -251,6 +258,22 @@ export function getStepDefinition(stepId: StepId): StepDefinition {
   return step;
 }
 
+export function getReactionProgress(resources: Resources): ReactionProgress {
+  const initial = initialResources();
+
+  return {
+    glucose: totalGlucose(initial) - totalGlucose(resources),
+    oxygen: initial.freeOxygen - resources.freeOxygen,
+    co2: resources.freeCo2 - initial.freeCo2,
+    water: resources.freeWater - initial.freeWater,
+    atp: totalAtp(resources) - totalAtp(initial)
+  };
+}
+
+export function totalAtp(resources: Resources): number {
+  return resources.cytAtp + resources.mitAtp;
+}
+
 export function attemptStep(state: GameState, stepId: StepId): GameState {
   if (state.completed) {
     return state;
@@ -269,7 +292,7 @@ export function attemptStep(state: GameState, stepId: StepId): GameState {
   }
 
   activeTeam.score += pointsDelta;
-  const completed = resources.nAtp >= TARGET_ATP;
+  const completed = totalAtp(resources) >= TARGET_ATP;
   const winnerScore = Math.max(...teams.map((team) => team.score));
   const winnerIds = completed ? teams.filter((team) => team.score === winnerScore).map((team) => team.id) : [];
   const winnerNames = completed ? teams.filter((team) => winnerIds.includes(team.id)).map((team) => team.name) : [];
@@ -322,17 +345,23 @@ export function getMissingRequirements(resources: Resources, stepId: StepId): st
         resources.mitPyruvate > 0 ? '' : 'piruvato nella matrice',
         resources.mitAdp > 0 ? '' : 'ADP nella matrice',
         resources.mitNad > 3 ? '' : '4 NAD+ nella matrice',
-        resources.mitFad > 0 ? '' : 'FAD nella matrice'
+        resources.mitFad > 0 ? '' : 'FAD nella matrice',
+        resources.freeWater > 2 ? '' : '3 H2O sulla plancia'
       ].filter(Boolean);
     case 'etc': {
-      const nadhPath = resources.mitNadh > 1 && resources.mitH > 19;
-      const fadhPath = resources.mitFadh2 > 1 && resources.mitH > 11;
+      const hasOxygen = resources.freeOxygen > 0;
+      const nadhPath = hasOxygen && resources.mitNadh > 1 && resources.mitH > 19;
+      const fadhPath = hasOxygen && resources.mitFadh2 > 1 && resources.mitH > 11;
 
       if (nadhPath || fadhPath) {
         return [];
       }
 
-      return ['2 NADH o 2 FADH2 nella matrice', 'protoni nella matrice'];
+      return [
+        hasOxygen ? '' : 'O2 sulla plancia',
+        resources.mitNadh > 1 || resources.mitFadh2 > 1 ? '' : '2 NADH o 2 FADH2 nella matrice',
+        resources.mitH > 19 || (resources.mitFadh2 > 1 && resources.mitH > 11) ? '' : 'protoni nella matrice'
+      ].filter(Boolean);
     }
     case 'atp-synthase':
       return [
@@ -343,15 +372,15 @@ export function getMissingRequirements(resources: Resources, stepId: StepId): st
 }
 
 export function getCompartmentViews(resources: Resources): CompartmentView[] {
+  const progress = getReactionProgress(resources);
+
   return [
     {
       id: 'outside',
       label: 'Esterno',
       detail: 'riserva e scambi',
       tokens: [
-        token('ext-glucose', 'Glucosio', resources.extGlucose, 'glucose'),
-        token('oxygen', 'O2', Number.POSITIVE_INFINITY, 'oxygen', true),
-        token('water-external', 'H2O', Number.POSITIVE_INFINITY, 'water', true)
+        token('ext-glucose', 'Glucosio', resources.extGlucose, 'glucose')
       ]
     },
     {
@@ -389,15 +418,25 @@ export function getCompartmentViews(resources: Resources): CompartmentView[] {
       tokens: [token('int-h', 'H+ intermembrana', resources.intH, 'proton')]
     },
     {
+      id: 'board',
+      label: 'Plancia intera',
+      detail: 'ossigeno, acqua e prodotti diffusi',
+      tokens: [
+        token('free-oxygen', 'O2', resources.freeOxygen, 'oxygen'),
+        token('free-water', 'H2O', resources.freeWater, 'water'),
+        token('free-co2', 'CO2', resources.freeCo2, 'co2')
+      ]
+    },
+    {
       id: 'balance',
       label: 'Bilancio globale',
-      detail: 'molecole scambiate o prodotte',
+      detail: 'coefficienti della reazione',
       tokens: [
-        token('n-glucose', 'Glucosio usato', resources.nGlucose, 'glucose'),
-        token('n-oxygen', 'O2 consumato', resources.nOxygen, 'oxygen'),
-        token('n-co2', 'CO2', resources.nCo2, 'co2'),
-        token('n-water', 'H2O netta', resources.nWater, 'water'),
-        token('n-atp', 'ATP totale', resources.nAtp, 'atp')
+        token('progress-glucose', 'Glucosio', progress.glucose, 'glucose'),
+        token('progress-oxygen', 'O2', progress.oxygen, 'oxygen'),
+        token('progress-co2', 'CO2', progress.co2, 'co2'),
+        token('progress-water', 'H2O netta', progress.water, 'water'),
+        token('progress-atp', 'ATP totale', progress.atp, 'atp')
       ]
     }
   ];
@@ -432,7 +471,6 @@ function applyStep(resources: Resources, stepId: StepId): void {
     case 'import-glucose':
       resources.extGlucose -= 1;
       resources.cytGlucose += 1;
-      resources.nGlucose += 1;
       return;
     case 'glycolysis':
       resources.cytGlucose -= 1;
@@ -441,7 +479,6 @@ function applyStep(resources: Resources, stepId: StepId): void {
       resources.cytAtp += 2;
       resources.cytNadh += 2;
       resources.cytPyruvate += 2;
-      resources.nAtp += 2;
       return;
     case 'import-pyruvate':
       resources.cytPyruvate -= 1;
@@ -461,9 +498,8 @@ function applyStep(resources: Resources, stepId: StepId): void {
       resources.mitAtp += 1;
       resources.mitNadh += 4;
       resources.mitFadh2 += 1;
-      resources.nAtp += 1;
-      resources.nCo2 += 3;
-      resources.nWater -= 3;
+      resources.freeCo2 += 3;
+      resources.freeWater -= 3;
       return;
     case 'etc':
       if (resources.mitNadh > 1 && resources.mitH > 19) {
@@ -478,17 +514,20 @@ function applyStep(resources: Resources, stepId: StepId): void {
         resources.intH += 12;
       }
 
-      resources.nOxygen += 1;
-      resources.nWater += 2;
+      resources.freeOxygen -= 1;
+      resources.freeWater += 2;
       return;
     case 'atp-synthase':
       resources.intH -= 4;
       resources.mitH += 4;
       resources.mitAdp -= 1;
       resources.mitAtp += 1;
-      resources.nAtp += 1;
       return;
   }
+}
+
+function totalGlucose(resources: Resources): number {
+  return resources.extGlucose + resources.cytGlucose;
 }
 
 function successMessage(stepId: StepId): string {

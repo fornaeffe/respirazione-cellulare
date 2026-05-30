@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attemptStep, createGame } from './game';
+import { attemptStep, createGame, getReactionProgress, totalAtp, type Resources } from './game';
 
 describe('cellular respiration game', () => {
   it('starts with five teams and the PowerPoint resource setup', () => {
@@ -12,6 +12,9 @@ describe('cellular respiration game', () => {
     expect(game.resources.mitAdp).toBe(30);
     expect(game.resources.mitH).toBe(120);
     expect(game.resources.intH).toBe(120);
+    expect(game.resources.freeOxygen).toBe(6);
+    expect(game.resources.freeWater).toBe(6);
+    expect(game.resources.freeCo2).toBe(0);
   });
 
   it('penalizes an impossible step and advances the active team', () => {
@@ -33,7 +36,42 @@ describe('cellular respiration game', () => {
     expect(game.resources.cytPyruvate).toBe(2);
     expect(game.resources.cytAtp).toBe(2);
     expect(game.resources.cytNadh).toBe(2);
-    expect(game.resources.nAtp).toBe(2);
+    expect(totalAtp(game.resources)).toBe(2);
+    expect(getReactionProgress(game.resources).glucose).toBe(1);
+  });
+
+  it('keeps water, oxygen, and CO2 as visible non-negative resources distinct from reaction coefficients', () => {
+    let game = createGame(['A', 'B']);
+
+    game = attemptStep(game, 'import-glucose');
+    game = attemptStep(game, 'glycolysis');
+    game = attemptStep(game, 'import-pyruvate');
+    game = attemptStep(game, 'import-pyruvate');
+    game = attemptStep(game, 'import-nadh');
+    game = attemptStep(game, 'import-nadh');
+    game = attemptStep(game, 'krebs');
+    game = attemptStep(game, 'krebs');
+
+    expect(game.resources.freeWater).toBe(0);
+    expect(game.resources.freeCo2).toBe(6);
+    expect(getReactionProgress(game.resources)).toMatchObject({
+      glucose: 1,
+      oxygen: 0,
+      co2: 6,
+      water: -6,
+      atp: 4
+    });
+    expectAllResourcesNonNegative(game.resources);
+
+    game = attemptStep(game, 'etc');
+
+    expect(game.resources.freeOxygen).toBe(5);
+    expect(game.resources.freeWater).toBe(2);
+    expect(getReactionProgress(game.resources)).toMatchObject({
+      oxygen: 1,
+      water: -4
+    });
+    expectAllResourcesNonNegative(game.resources);
   });
 
   it('uses the proton gradient for ATP synthase only after electron transport', () => {
@@ -52,7 +90,7 @@ describe('cellular respiration game', () => {
 
     expect(game.lastResult?.success).toBe(true);
     expect(game.resources.mitAtp).toBe(3);
-    expect(game.resources.nAtp).toBe(5);
+    expect(totalAtp(game.resources)).toBe(5);
   });
 
   it('ends the game when the respiration total reaches 32 ATP', () => {
@@ -81,10 +119,26 @@ describe('cellular respiration game', () => {
       game = attemptStep(game, 'atp-synthase');
     }
 
-    expect(game.resources.nAtp).toBe(32);
+    expect(totalAtp(game.resources)).toBe(32);
+    expect(getReactionProgress(game.resources)).toMatchObject({
+      glucose: 1,
+      oxygen: 6,
+      co2: 6,
+      water: 6,
+      atp: 32
+    });
+    expect(game.resources.freeOxygen).toBe(0);
+    expect(game.resources.freeWater).toBe(12);
+    expectAllResourcesNonNegative(game.resources);
     expect(game.completed).toBe(true);
     expect(game.lastResult?.gameOver).toBe(true);
     expect(game.lastResult?.winnerNames.length).toBeGreaterThan(0);
     expect(attemptStep(game, 'glycolysis')).toBe(game);
   });
 });
+
+function expectAllResourcesNonNegative(resources: Resources): void {
+  for (const value of Object.values(resources)) {
+    expect(value).toBeGreaterThanOrEqual(0);
+  }
+}

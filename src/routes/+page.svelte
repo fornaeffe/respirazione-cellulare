@@ -19,6 +19,7 @@
     clampTeamCount,
     createGame,
     defaultTeamNames,
+    getReactionProgress,
     getTeamColor,
     type GameState,
     type MoveResult,
@@ -83,7 +84,7 @@
     id: string;
     kind: TokenKind;
     compartment: MoleculeCompartment;
-    count: (resources: Resources) => number;
+    resource: keyof Resources;
     scale?: number;
     dimmed?: boolean;
   };
@@ -199,26 +200,23 @@
   ];
 
   const MOLECULE_SPECS: MoleculeDisplaySpec[] = [
-    moleculeSpec('ext-glucose', 'glucose', 'outside', (resources) => resources.extGlucose, { scale: 1.1 }),
-    moleculeSpec('oxygen', 'oxygen', 'free', (resources) => Math.max(0, 6 - resources.nOxygen), {
-      scale: 0.82,
-      dimmed: true
-    }),
-    moleculeSpec('water-free', 'water', 'free', (resources) => Math.max(0, resources.nWater), { scale: 0.76 }),
-    moleculeSpec('co2', 'co2', 'free', (resources) => resources.nCo2, { scale: 0.68 }),
-    moleculeSpec('cyt-glucose', 'glucose', 'cytosol', (resources) => resources.cytGlucose, { scale: 1.05 }),
-    moleculeSpec('cyt-pyruvate', 'pyruvate', 'cytosol', (resources) => resources.cytPyruvate),
-    moleculeSpec('cyt-adp', 'adp', 'cytosol', (resources) => resources.cytAdp, { scale: 0.68 }),
-    moleculeSpec('cyt-atp', 'atp', 'cytosol', (resources) => resources.cytAtp, { scale: 0.7 }),
-    moleculeSpec('cyt-nad', 'nad', 'cytosol', (resources) => resources.cytNad, { scale: 0.68 }),
-    moleculeSpec('cyt-nadh', 'nadh', 'cytosol', (resources) => resources.cytNadh, { scale: 0.68 }),
-    moleculeSpec('mit-pyruvate', 'pyruvate', 'matrix', (resources) => resources.mitPyruvate, { scale: 0.76 }),
-    moleculeSpec('mit-adp', 'adp', 'matrix', (resources) => resources.mitAdp, { scale: 0.52 }),
-    moleculeSpec('mit-atp', 'atp', 'matrix', (resources) => resources.mitAtp, { scale: 0.48 }),
-    moleculeSpec('mit-nad', 'nad', 'matrix', (resources) => resources.mitNad, { scale: 0.54 }),
-    moleculeSpec('mit-nadh', 'nadh', 'matrix', (resources) => resources.mitNadh, { scale: 0.54 }),
-    moleculeSpec('mit-fad', 'fad', 'matrix', (resources) => resources.mitFad, { scale: 0.56 }),
-    moleculeSpec('mit-fadh2', 'fadh2', 'matrix', (resources) => resources.mitFadh2, { scale: 0.56 })
+    moleculeSpec('ext-glucose', 'glucose', 'outside', 'extGlucose', { scale: 1.1 }),
+    moleculeSpec('oxygen', 'oxygen', 'free', 'freeOxygen', { scale: 0.82 }),
+    moleculeSpec('water-free', 'water', 'free', 'freeWater', { scale: 0.76 }),
+    moleculeSpec('co2', 'co2', 'free', 'freeCo2', { scale: 0.68 }),
+    moleculeSpec('cyt-glucose', 'glucose', 'cytosol', 'cytGlucose', { scale: 1.05 }),
+    moleculeSpec('cyt-pyruvate', 'pyruvate', 'cytosol', 'cytPyruvate'),
+    moleculeSpec('cyt-adp', 'adp', 'cytosol', 'cytAdp', { scale: 0.68 }),
+    moleculeSpec('cyt-atp', 'atp', 'cytosol', 'cytAtp', { scale: 0.7 }),
+    moleculeSpec('cyt-nad', 'nad', 'cytosol', 'cytNad', { scale: 0.68 }),
+    moleculeSpec('cyt-nadh', 'nadh', 'cytosol', 'cytNadh', { scale: 0.68 }),
+    moleculeSpec('mit-pyruvate', 'pyruvate', 'matrix', 'mitPyruvate', { scale: 0.76 }),
+    moleculeSpec('mit-adp', 'adp', 'matrix', 'mitAdp', { scale: 0.52 }),
+    moleculeSpec('mit-atp', 'atp', 'matrix', 'mitAtp', { scale: 0.48 }),
+    moleculeSpec('mit-nad', 'nad', 'matrix', 'mitNad', { scale: 0.54 }),
+    moleculeSpec('mit-nadh', 'nadh', 'matrix', 'mitNadh', { scale: 0.54 }),
+    moleculeSpec('mit-fad', 'fad', 'matrix', 'mitFad', { scale: 0.56 }),
+    moleculeSpec('mit-fadh2', 'fadh2', 'matrix', 'mitFadh2', { scale: 0.56 })
   ];
 
   const MOLECULE_TO_ACTION_MS = 640;
@@ -298,8 +296,7 @@
   $: leadingScore = Math.max(...game.teams.map((team) => team.score));
   $: gameFinished = game.completed;
   $: protonDots = getProtonDots(game);
-  $: reactantWater = Math.max(0, -game.resources.nWater);
-  $: productWater = Math.max(0, game.resources.nWater);
+  $: reaction = getReactionProgress(game.resources);
 
   onMount(() => {
     lastFrameAt = performance.now();
@@ -418,7 +415,7 @@
     id: string,
     kind: TokenKind,
     compartment: MoleculeCompartment,
-    count: (resources: Resources) => number,
+    resource: keyof Resources,
     options: {
       scale?: number;
       dimmed?: boolean;
@@ -428,7 +425,7 @@
       id,
       kind,
       compartment,
-      count,
+      resource,
       scale: options.scale,
       dimmed: options.dimmed
     };
@@ -438,7 +435,7 @@
     moleculeSerial = 0;
 
     return MOLECULE_SPECS.flatMap((spec) =>
-      Array.from({ length: visibleMoleculeCount(spec, state.resources) }, () => createMolecule(spec))
+      Array.from({ length: state.resources[spec.resource] }, () => createMolecule(spec))
     );
   }
 
@@ -481,10 +478,6 @@
             }
           : { kind: 'drift' }
     };
-  }
-
-  function visibleMoleculeCount(spec: MoleculeDisplaySpec, resources: Resources): number {
-    return Math.max(0, Math.round(spec.count(resources)));
   }
 
   async function playSuccessfulStep(stepId: StepId, before: GameState, after: GameState): Promise<boolean> {
@@ -577,8 +570,8 @@
     const produced: MoleculeChange[] = [];
 
     for (const spec of MOLECULE_SPECS) {
-      const beforeCount = visibleMoleculeCount(spec, before);
-      const afterCount = visibleMoleculeCount(spec, after);
+      const beforeCount = before[spec.resource];
+      const afterCount = after[spec.resource];
       const difference = afterCount - beforeCount;
 
       if (difference > 0) {
@@ -1208,24 +1201,19 @@
       </div>
 
       <section class="reaction-strip" aria-label="Reazione complessiva">
-        <span class="coefficient">{game.resources.nGlucose}</span>
+        <span class="coefficient">{reaction.glucose}</span>
         <span>C<sub>6</sub>H<sub>12</sub>O<sub>6</sub></span>
         <span class="operator">+</span>
-        <span class="coefficient">{game.resources.nOxygen}</span>
+        <span class="coefficient">{reaction.oxygen}</span>
         <span>O<sub>2</sub></span>
-        {#if reactantWater > 0}
-          <span class="operator">+</span>
-          <span class="coefficient">{reactantWater}</span>
-          <span>H<sub>2</sub>O</span>
-        {/if}
         <span class="arrow">-></span>
-        <span class="coefficient">{game.resources.nCo2}</span>
+        <span class="coefficient">{reaction.co2}</span>
         <span>CO<sub>2</sub></span>
         <span class="operator">+</span>
-        <span class="coefficient">{productWater}</span>
+        <span class="coefficient">{reaction.water}</span>
         <span>H<sub>2</sub>O</span>
         <span class="operator">+</span>
-        <span class="coefficient">{game.resources.nAtp}</span>
+        <span class="coefficient">{reaction.atp}</span>
         <span>ATP</span>
       </section>
 
