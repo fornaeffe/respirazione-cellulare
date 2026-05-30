@@ -92,6 +92,29 @@ export interface StepDefinition {
   summary: string;
 }
 
+export type ResourceLocation = 'Esterno' | 'Citoplasma' | 'Matrice' | 'Spazio intermembrana' | 'Plancia';
+
+export interface StepResourceItem {
+  count: number;
+  kind: TokenKind;
+  label: string;
+  location: ResourceLocation;
+}
+
+export interface StepResourceVariant {
+  id: string;
+  label: string;
+  consumes: StepResourceItem[];
+  produces: StepResourceItem[];
+  note?: string;
+}
+
+export interface StepResourceGuide {
+  stepId: StepId;
+  variants: StepResourceVariant[];
+  note?: string;
+}
+
 export interface ResourceToken {
   id: string;
   label: string;
@@ -187,6 +210,114 @@ export const STEP_DEFINITIONS: StepDefinition[] = [
     equation: 'ADP + Pi + gradiente H+ -> ATP',
     summary: 'Fa rientrare protoni nella matrice e sintetizza ATP.'
   }
+];
+
+export const STEP_RESOURCE_GUIDE: StepResourceGuide[] = [
+  guide('import-glucose', [
+    variant('trasporto', 'Trasporto', [resource(1, 'glucose', 'Glucosio', 'Esterno')], [
+      resource(1, 'glucose', 'Glucosio', 'Citoplasma')
+    ])
+  ]),
+  guide('glycolysis', [
+    variant(
+      'reazione',
+      'Reazione',
+      [
+        resource(1, 'glucose', 'Glucosio', 'Citoplasma'),
+        resource(2, 'adp', 'ADP', 'Citoplasma'),
+        resource(2, 'nad', 'NAD+', 'Citoplasma')
+      ],
+      [
+        resource(2, 'pyruvate', 'Piruvato', 'Citoplasma'),
+        resource(2, 'atp', 'ATP', 'Citoplasma'),
+        resource(2, 'nadh', 'NADH', 'Citoplasma')
+      ]
+    )
+  ]),
+  guide('import-pyruvate', [
+    variant('trasporto', 'Trasporto', [resource(1, 'pyruvate', 'Piruvato', 'Citoplasma')], [
+      resource(1, 'pyruvate', 'Piruvato', 'Matrice')
+    ])
+  ]),
+  guide('import-nadh', [
+    variant(
+      'shuttle',
+      'Shuttle',
+      [
+        resource(1, 'nadh', 'NADH', 'Citoplasma'),
+        resource(1, 'nad', 'NAD+', 'Matrice')
+      ],
+      [
+        resource(1, 'nad', 'NAD+', 'Citoplasma'),
+        resource(1, 'nadh', 'NADH', 'Matrice')
+      ]
+    )
+  ]),
+  guide('krebs', [
+    variant(
+      'reazione',
+      'Reazione',
+      [
+        resource(1, 'pyruvate', 'Piruvato', 'Matrice'),
+        resource(1, 'adp', 'ADP', 'Matrice'),
+        resource(4, 'nad', 'NAD+', 'Matrice'),
+        resource(1, 'fad', 'FAD', 'Matrice'),
+        resource(3, 'water', 'H2O', 'Plancia')
+      ],
+      [
+        resource(3, 'co2', 'CO2', 'Plancia'),
+        resource(1, 'atp', 'ATP', 'Matrice'),
+        resource(4, 'nadh', 'NADH', 'Matrice'),
+        resource(1, 'fadh2', 'FADH2', 'Matrice')
+      ]
+    )
+  ]),
+  guide(
+    'etc',
+    [
+      variant(
+        'nadh',
+        'Via NADH',
+        [
+          resource(2, 'nadh', 'NADH', 'Matrice'),
+          resource(1, 'oxygen', 'O2', 'Plancia'),
+          resource(20, 'proton', 'H+', 'Matrice')
+        ],
+        [
+          resource(2, 'nad', 'NAD+', 'Matrice'),
+          resource(2, 'water', 'H2O', 'Plancia'),
+          resource(20, 'proton', 'H+', 'Spazio intermembrana')
+        ]
+      ),
+      variant(
+        'fadh2',
+        'Via FADH2',
+        [
+          resource(2, 'fadh2', 'FADH2', 'Matrice'),
+          resource(1, 'oxygen', 'O2', 'Plancia'),
+          resource(12, 'proton', 'H+', 'Matrice')
+        ],
+        [
+          resource(2, 'fad', 'FAD', 'Matrice'),
+          resource(2, 'water', 'H2O', 'Plancia'),
+          resource(12, 'proton', 'H+', 'Spazio intermembrana')
+        ]
+      )
+    ],
+    'Se entrambe le vie sono possibili, il gioco usa prima NADH.'
+  ),
+  guide(
+    'atp-synthase',
+    [
+      variant(
+        'reazione',
+        'Reazione',
+        [resource(1, 'adp', 'ADP', 'Matrice'), resource(4, 'proton', 'H+', 'Spazio intermembrana')],
+        [resource(1, 'atp', 'ATP', 'Matrice'), resource(4, 'proton', 'H+', 'Matrice')]
+      )
+    ],
+    'Richiede che gli H+ nello spazio intermembrana siano maggiori degli H+ nella matrice.'
+  )
 ];
 
 const STEP_BY_ID = new Map(STEP_DEFINITIONS.map((step) => [step.id, step]));
@@ -464,6 +595,24 @@ function token(
   infinite = false
 ): ResourceToken {
   return { id, label, count, kind, infinite };
+}
+
+function guide(stepId: StepId, variants: StepResourceVariant[], note?: string): StepResourceGuide {
+  return { stepId, variants, note };
+}
+
+function variant(
+  id: string,
+  label: string,
+  consumes: StepResourceItem[],
+  produces: StepResourceItem[],
+  note?: string
+): StepResourceVariant {
+  return { id, label, consumes, produces, note };
+}
+
+function resource(count: number, kind: TokenKind, label: string, location: ResourceLocation): StepResourceItem {
+  return { count, kind, label, location };
 }
 
 function applyStep(resources: Resources, stepId: StepId): void {

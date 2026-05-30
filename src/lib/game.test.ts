@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { attemptStep, createGame, getReactionProgress, totalAtp, type Resources } from './game';
+import {
+  STEP_DEFINITIONS,
+  STEP_RESOURCE_GUIDE,
+  attemptStep,
+  createGame,
+  getReactionProgress,
+  totalAtp,
+  type Resources
+} from './game';
 
 describe('cellular respiration game', () => {
   it('starts with five teams and the PowerPoint resource setup', () => {
@@ -134,6 +142,13 @@ describe('cellular respiration game', () => {
     expect(game.lastResult?.gameOver).toBe(true);
     expect(game.lastResult?.winnerNames.length).toBeGreaterThan(0);
     expect(attemptStep(game, 'glycolysis')).toBe(game);
+  });
+
+  it('has printable resource guidance for every action', () => {
+    expect(STEP_RESOURCE_GUIDE.map((guide) => guide.stepId)).toEqual(STEP_DEFINITIONS.map((step) => step.id));
+    expect(STEP_RESOURCE_GUIDE.find((guide) => guide.stepId === 'etc')?.variants).toHaveLength(2);
+    expect(STEP_RESOURCE_GUIDE.every((guide) => guide.variants.every((variant) => variant.consumes.length > 0))).toBe(true);
+    expect(STEP_RESOURCE_GUIDE.every((guide) => guide.variants.every((variant) => variant.produces.length > 0))).toBe(true);
   });
 });
 
